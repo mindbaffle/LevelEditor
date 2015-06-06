@@ -2,11 +2,10 @@
 
 #include <stdio.h>
 #include "SwapChain.h"
-#include <DxErr.h>
 #include "../Core/Utils.h"
 #include "../Core/Logger.h"
 #include "Texture.h"
-#include "RenderUtil.h"
+#include "../DirectX/DXUtil.h"
 
 namespace LvEdEngine
 {
@@ -16,12 +15,9 @@ SwapChain::SwapChain(HWND hwnd,ID3D11Device* pd3dDevice, IDXGIFactory1* pDXGIFac
       m_pDXGIFactory1(pDXGIFactory1),
 	  m_pSwapChain(NULL)
 	 
-{
-	    
+{	    
     m_multiSampleCount = 4;
-    m_multiSampleQuality = 0;
-
-    
+    m_multiSampleQuality = 0;    
 	UINT backbufferQuality;
 	m_pd3dDevice->CheckMultisampleQualityLevels(DXGI_FORMAT_R8G8B8A8_UNORM,m_multiSampleCount,&backbufferQuality);
 
@@ -49,7 +45,7 @@ SwapChain::SwapChain(HWND hwnd,ID3D11Device* pd3dDevice, IDXGIFactory1* pDXGIFac
     sd.BufferCount = 1;
     sd.BufferDesc.Width = width;
     sd.BufferDesc.Height = height;
-    sd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    sd.BufferDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
     sd.BufferDesc.RefreshRate.Numerator = 60;
     sd.BufferDesc.RefreshRate.Denominator = 1;
     sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
@@ -73,18 +69,24 @@ SwapChain::SwapChain(HWND hwnd,ID3D11Device* pd3dDevice, IDXGIFactory1* pDXGIFac
 	{
 		return;
 	}
-    Render_SetDebugName(pBackBuffer, "renderTarget" );  
+    DXUtil::SetDebugName(pBackBuffer, "renderTarget" );  
 
     m_pColorBuffer = new Texture(pBackBuffer,false);
 
+    /*D3D11_RENDER_TARGET_VIEW_DESC rtv;
+    SecureZeroMemory( &rtv, sizeof( rtv ) );
+    rtv.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+    rtv.ViewDimension = sd.SampleDesc.Quality == 0 ?        
+        D3D11_RTV_DIMENSION_TEXTURE2D : D3D11_RTV_DIMENSION_TEXTURE2DMS;*/
+                    
     hr = m_pd3dDevice->CreateRenderTargetView( pBackBuffer, NULL, &m_pRenderTargetView );
-    
+        
     if (Logger::IsFailureLog(hr, L"CreateRenderTargetView"))
 	{
 		return;
 	}        
 
-    Render_SetDebugName(m_pRenderTargetView,"renderTargetView");
+    DXUtil::SetDebugName(m_pRenderTargetView,"renderTargetView");
     
 	// Create the depth stencil view
     D3D11_TEXTURE2D_DESC descDepth;
@@ -107,7 +109,7 @@ SwapChain::SwapChain(HWND hwnd,ID3D11Device* pd3dDevice, IDXGIFactory1* pDXGIFac
 		return;
 	}        
 
-    Render_SetDebugName(pDepthStencil,"depth buffer"  );
+    DXUtil::SetDebugName(pDepthStencil,"depth buffer"  );
   
 
     m_pDepthStencilBuffer = new Texture(pDepthStencil,false);
@@ -117,6 +119,17 @@ SwapChain::SwapChain(HWND hwnd,ID3D11Device* pd3dDevice, IDXGIFactory1* pDXGIFac
 	{
 		return;
 	}
+
+    // create depth buffer for Forground scene
+    ID3D11Texture2D* pDepthStencilFg; 
+    hr = m_pd3dDevice->CreateTexture2D( &descDepth, NULL, &pDepthStencilFg);
+    if (Logger::IsFailureLog(hr, L"CreateTexture2D"))
+        return;
+    hr = m_pd3dDevice->CreateDepthStencilView( pDepthStencilFg, NULL, &m_pDepthStencilViewFg );
+	if (Logger::IsFailureLog(hr, L"CreateDepthStencilView"))
+        return;
+    pDepthStencilFg->Release();
+	
     m_width = width;
 	m_height = height;	
 
@@ -128,7 +141,7 @@ SwapChain::SwapChain(HWND hwnd,ID3D11Device* pd3dDevice, IDXGIFactory1* pDXGIFac
     m_viewport.MaxDepth = 1.0f;
 
 
-    Render_SetDebugName(m_pDepthStencilView,"depth buffer view");
+    DXUtil::SetDebugName(m_pDepthStencilView,"depth buffer view");
     
     Logger::Log(OutputMessageType::Debug, "swapchain created %d %d\n",m_width,m_height);
 
@@ -140,6 +153,7 @@ SwapChain::~SwapChain(void)
     SAFE_RELEASE(m_pSwapChain)
     SAFE_RELEASE(m_pRenderTargetView)
     SAFE_RELEASE(m_pDepthStencilView)
+    SAFE_RELEASE(m_pDepthStencilViewFg)
     SAFE_DELETE(m_pDepthStencilBuffer)
     SAFE_DELETE(m_pColorBuffer);
 
@@ -187,11 +201,10 @@ void SwapChain::Resize(int w, int h)
 		return;
 	}
 	
-    Render_SetDebugName(m_pRenderTargetView,"renderTargetView");
+    DXUtil::SetDebugName(m_pRenderTargetView,"renderTargetView");
     
 	// re-create depth buffer.
-	D3D11_TEXTURE2D_DESC depthDescr;
-	SecureZeroMemory( &depthDescr, sizeof(depthDescr) );
+	D3D11_TEXTURE2D_DESC depthDescr;	
 	m_pDepthStencilBuffer->GetTex()->GetDesc(&depthDescr);
 	SAFE_DELETE(m_pDepthStencilBuffer);
 
@@ -205,7 +218,7 @@ void SwapChain::Resize(int w, int h)
 		return;
 	}        
     
-    Render_SetDebugName(pBackBuffer,"depth buffer");
+    DXUtil::SetDebugName(pBackBuffer,"depth buffer");
     
     m_pDepthStencilBuffer = new Texture(pBackBuffer,false);
 
@@ -215,7 +228,21 @@ void SwapChain::Resize(int w, int h)
 		return;
 	}
 
-    Render_SetDebugName(m_pDepthStencilView,"depth buffer view");
+    DXUtil::SetDebugName(m_pDepthStencilView,"depth buffer view");
+
+
+    ID3D11Texture2D* pDepthStencilFg; 
+    hr = m_pd3dDevice->CreateTexture2D( &depthDescr, NULL, &pDepthStencilFg);
+    if (Logger::IsFailureLog(hr, L"CreateTexture2D"))
+        return;
+
+    m_pDepthStencilViewFg->Release();
+    m_pDepthStencilViewFg = NULL;
+    hr = m_pd3dDevice->CreateDepthStencilView( pDepthStencilFg, NULL, &m_pDepthStencilViewFg );
+	if (Logger::IsFailureLog(hr, L"CreateDepthStencilView"))
+        return;
+    pDepthStencilFg->Release();
+
           
     m_viewport.Width    = (float)(m_width);
     m_viewport.Height   = (float)(m_height);    

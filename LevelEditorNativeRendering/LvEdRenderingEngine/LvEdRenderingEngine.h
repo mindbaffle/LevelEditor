@@ -27,6 +27,7 @@
 #include "Renderer/FontTypes.h"
 #include "Core/typedefs.h"
 #include "Renderer/RenderEnums.h"
+#include "FrameTime.h"
 #include <stdint.h>
 
 
@@ -41,6 +42,9 @@ namespace LvEdEngine
 using namespace LvEdEngine;
 
 
+
+typedef void (__stdcall * InvalidateViewsCallbackType)(void);
+
 //==============================================================================
 // Initialization and Shutdown Functions
 //==============================================================================
@@ -49,11 +53,16 @@ using namespace LvEdEngine;
  * Initializes the game-rendering engine.
  *
  * LevelEditor calls this function once during startup.
+ * 
+ * @param logCallback call back for logging.
+ * @param invalidateCallback call back used for notifying LevelEditor that
+ *        the views need to be redrawn.
+ * @outEngineInfo: Engine information 
  *
- * @param hwnd Handle of the quad-control that hosts the four view controls
- * @param callback call back for logging.
  */
-extern "C" LVEDRENDERINGENGINE_API void __stdcall LvEd_Initialize(HWND hwnd, LogCallbackType callback);
+extern "C" LVEDRENDERINGENGINE_API void __stdcall LvEd_Initialize(LogCallbackType logCallback,
+    InvalidateViewsCallbackType invalidateCallback, 
+    const wchar_t** outEngineInfo);
 
 
 /**
@@ -304,6 +313,11 @@ extern "C" LVEDRENDERINGENGINE_API void __stdcall LvEd_SetGameLevel(ObjectGUID i
  */ 
 extern "C" LVEDRENDERINGENGINE_API ObjectGUID __stdcall LvEd_GetGameLevel();
 
+/**
+* Wait until all the pending resources are loaded.
+*/
+extern "C" LVEDRENDERINGENGINE_API void  __stdcall LvEd_WaitForPendingResources();
+
 
 /**
  * Updates the game world.
@@ -311,11 +325,11 @@ extern "C" LVEDRENDERINGENGINE_API ObjectGUID __stdcall LvEd_GetGameLevel();
  * LevelEditor calls this function for each frame.
  *
  * @param t Total time since LevelEditor start, in seconds
- * @param dt Delta time since last update
- * @param waitForPendingResources wait for all the pending resources to load.
+ * @param dt Delta time since last update 
  *
  */
-extern "C" LVEDRENDERINGENGINE_API void  __stdcall LvEd_Update(double t, float dt,bool waitForPendingResources);
+ extern "C" LVEDRENDERINGENGINE_API void  __stdcall LvEd_Update(FrameTime* ft, UpdateTypeEnum updateType);
+
 
 
 /**
@@ -400,6 +414,13 @@ extern "C" LVEDRENDERINGENGINE_API ObjectGUID __stdcall LvEd_CreateIndexBuffer(u
 extern "C" LVEDRENDERINGENGINE_API void __stdcall LvEd_DeleteBuffer(ObjectGUID buffer);
 
 
+
+/**
+* Set render flag
+* @param renderFlags basic rendering flags
+*/
+extern "C" LVEDRENDERINGENGINE_API void __stdcall LvEd_SetRendererFlag(BasicRendererFlagsEnum renderFlags);
+
 /**
  * Draws the specified primitive with the specified parameters.
  *
@@ -408,8 +429,7 @@ extern "C" LVEDRENDERINGENGINE_API void __stdcall LvEd_DeleteBuffer(ObjectGUID b
  * @param StartVertex Starting vertex
  * @param vertexCount Vertex count
  * @param color Color component array (Red, Green, Blue, Alpha)
- * @param xform View transform
- * @param renderFlags Render flags
+ * @param xform View transform 
  *
  */
 extern "C" LVEDRENDERINGENGINE_API void __stdcall LvEd_DrawPrimitive(PrimitiveTypeEnum pt,                                                                 
@@ -417,8 +437,7 @@ extern "C" LVEDRENDERINGENGINE_API void __stdcall LvEd_DrawPrimitive(PrimitiveTy
                                                                 uint32_t StartVertex,
                                                                 uint32_t vertexCount,
                                                                 float* color,
-                                                                float* xform,
-                                                                BasicRendererFlagsEnum renderFlags);
+                                                                float* xform);
 
 
 /**
@@ -431,8 +450,7 @@ extern "C" LVEDRENDERINGENGINE_API void __stdcall LvEd_DrawPrimitive(PrimitiveTy
  * @param indexCount Index count
  * @param startVertex Starting vertex
  * @param color Color component array (Red, Green, Blue, Alpha)
- * @param xform View transform
- * @param renderFlags Render flags
+ * @param xform View transform 
  *
  */
 extern "C" LVEDRENDERINGENGINE_API void __stdcall LvEd_DrawIndexedPrimitive(PrimitiveTypeEnum pt,                                                             
@@ -442,8 +460,8 @@ extern "C" LVEDRENDERINGENGINE_API void __stdcall LvEd_DrawIndexedPrimitive(Prim
                                                                     uint32_t indexCount,
                                                                     uint32_t startVertex,                        
                                                                     float* color,
-                                                                    float* xform,
-                                                                    BasicRendererFlagsEnum renderFlags);
+                                                                    float* xform);
+                                                                    
 
 
 //=============================================================================

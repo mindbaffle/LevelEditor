@@ -71,9 +71,10 @@ namespace LevelEditor
             // Register palette items based on the schema file's annotations.
             foreach (DomNodeType nodeType in m_schemaLoader.TypeCollection.GetNodeTypes())
             {
-                NodeTypePaletteItem item = nodeType.GetTag<NodeTypePaletteItem>();
+                NodeTypePaletteItem item = nodeType.GetTagLocal<NodeTypePaletteItem>();
                 if (item != null)
-                {                    
+                {
+                    Console.WriteLine("reg: " + nodeType.Name);
                     m_paletteService.AddItem(nodeType, item.Category, this);
                 }
             }
@@ -156,8 +157,9 @@ namespace LevelEditor
         {            
             GameDocument gameDocument = document as GameDocument;
             gameDocument.Save(uri, m_schemaLoader);
+
             // save external resources.
-            foreach (var obj in Util.FindAll<IEditableResourceOwner>())
+            foreach (var obj in m_gameDocumentRegistry.FindAll<IEditableResourceOwner>())
             {
                 if (obj.Dirty)
                     obj.Save();                
@@ -364,12 +366,14 @@ namespace LevelEditor
       
         private void RegisterSettings()
         {
+            string descr = "Root path for all resources".Localize();
             var resourceRoot =
                 new BoundPropertyDescriptor(this, () => ResourceRoot,
                     "ResourceRoot".Localize("A user preference and the name of the preference in the settings file"),
                     null,
-                    "Root path for all resources".Localize(),
-                    new FolderNameEditor(), null);
+                    descr,
+                    new FolderBrowserDialogUITypeEditor(descr), null);
+            
 
             m_settingsService.RegisterSettings(this, resourceRoot);
             m_settingsService.RegisterUserSettings("Resources".Localize(), resourceRoot);
@@ -380,8 +384,9 @@ namespace LevelEditor
                     null,
                     "Resolve sub-documents on load".Localize());
                     
-            m_settingsService.RegisterSettings("Documents".Localize(), resolveOnLoad);
-            m_settingsService.RegisterUserSettings("Documents".Localize(), resolveOnLoad);
+            string docs = "Documents".Localize();
+            m_settingsService.RegisterSettings(docs, resolveOnLoad);
+            m_settingsService.RegisterUserSettings(docs, resolveOnLoad);
 
         }
 

@@ -21,7 +21,7 @@ namespace RenderingInterop
 {
 
     /// <summary>
-    /// Thumbnail resolver for image resources</summary>    
+    /// Thumbnail resolver for 3d models resources</summary>    
     [Export(typeof(IThumbnailResolver))]
     [Export(typeof(IInitializable))]
     [PartCreationPolicy(CreationPolicy.Shared)]
@@ -105,10 +105,13 @@ namespace RenderingInterop
 
                 GameEngine.SetRenderState(m_renderState);
                 GameEngine.SetGameLevel(m_game.Cast<NativeObjectAdapter>());
-                GameEngine.Update(0, 0, true);
+
+                m_gameEngine.WaitForPendingResources();
+                FrameTime fr = new FrameTime(0, 0);
+                m_gameEngine.Update(fr, UpdateType.Paused);
 
                 IBoundable boundable = gob.Cast<IBoundable>();
-                Sce.Atf.VectorMath.Sphere3F sphere = boundable.BoundingBox.ToSphere();
+                Sphere3F sphere = boundable.BoundingBox.ToSphere();
                 
                 if (Math.Abs(sphere.Radius) <= float.Epsilon)
                     sphere.Radius = 1.0f;
@@ -191,6 +194,9 @@ namespace RenderingInterop
 
         [Import(AllowDefault = false)]
         private ResourceConverterService m_resourceConverterService = null;
+
+        [Import(AllowDefault = false)]
+        private IGameEngineProxy m_gameEngine;
 
         private IGame m_game;        
         private Camera m_cam = new Camera();

@@ -1,5 +1,6 @@
 ﻿//Copyright © 2014 Sony Computer Entertainment America LLC. See License.txt.
 
+using System;
 using System.Collections.Generic;
 using System.ComponentModel.Composition;
 using System.Windows.Forms;
@@ -288,8 +289,9 @@ namespace LevelEditorCore.Commands
                 null,
                 CommandVisibility.Menu,
                 this);
-                        
         }
+
+        
 
         private object[] m_contextMenuCommands;      
 

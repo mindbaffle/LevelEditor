@@ -41,28 +41,32 @@ namespace LevelEditor
 
             if (gameDocRegistry.MasterDocument == null || gameDocRegistry.MasterDocument == this.As<IGameDocument>())
             {
-                m_rootLayers = DomNode.GetChild(Schema.gameType.layersChild);
-                m_layers = new DomNodeListAdapter<ILayer>(m_rootLayers, Schema.layersType.layerChild);
+                m_layerRoot = DomNode.GetChild(Schema.gameType.layersChild);
+                m_layers = new DomNodeListAdapter<ILayer>(m_layerRoot, Schema.layersType.layerChild);
                 
-                m_rootLayers.ChildInserted += DomNode_ChildInserted;
-                m_rootLayers.ChildRemoved += DomNode_ChildRemoved;
-                m_rootLayers.AttributeChanged += DomNode_AttributeChanged;
+                m_layerRoot.ChildInserted += DomNode_ChildInserted;
+                m_layerRoot.ChildRemoved += DomNode_ChildRemoved;
+                m_layerRoot.AttributeChanged += DomNode_AttributeChanged;
                 GameContext gameContext = DomNode.Cast<GameContext>();
                 IValidationContext validationContext = (IValidationContext)gameContext;
                 validationContext.Ended += validationContext_Ended;
-                m_activeItem = m_rootLayers;                
+                m_activeItem = m_layerRoot;                
             }
         }
 
-       
-        private void validationContext_Ended(object sender, EventArgs e)
-        {                        
+        public void RefreshRoot()
+        {
             // refresh root.
             LayerLister lister = Globals.MEFContainer.GetExportedValue<LayerLister>();
-            lister.TreeControlAdapter.Refresh(m_rootLayers);                       
+            if(lister != null)
+                lister.TreeControlAdapter.Refresh(m_layerRoot);                       
+        }
+        private void validationContext_Ended(object sender, EventArgs e)
+        {
+            RefreshRoot();
         }
 
-        private DomNode m_rootLayers;
+        private DomNode m_layerRoot;
         private IList<ILayer> m_layers;
         public IList<ILayer> Layers
         {
@@ -93,14 +97,7 @@ namespace LevelEditor
 
         public bool CanDelete()
         {
-            IEnumerable<DomNode> rootDomNodes = DomNode.GetRoots(Selection.AsIEnumerable<DomNode>());
-            foreach (DomNode domNode in rootDomNodes)
-            {
-                if (domNode.Parent != null)
-                    return true;
-            }
-
-            return false;
+            return Selection.Count > 0;            
         }
 
         public void Delete()
@@ -189,7 +186,6 @@ namespace LevelEditor
                     layer.Layers.Add(otherLayer);
             }
         }
-
        
         #endregion
 
@@ -206,7 +202,7 @@ namespace LevelEditor
 
         object ITreeView.Root
         {
-            get { return m_rootLayers; }
+            get { return m_layerRoot; }
         }
 
         IEnumerable<object> ITreeView.GetChildren(object parent)
@@ -219,7 +215,7 @@ namespace LevelEditor
                 foreach (GameObjectReference reference in layer.GameObjectReferences)
                     yield return reference;
             }
-            else if (parent == m_rootLayers)
+            else if (parent == m_layerRoot)
             {
                 foreach (ILayer childLayer in Layers)
                     yield return childLayer;
@@ -284,24 +280,27 @@ namespace LevelEditor
                 }
             }
 
-            foreach (IGameObject gameObject in layer.GetGameObjects())
+            if (!hasCheckedChild || !hasUncheckedChild)
             {
-                IVisible iVisible = gameObject.As<IVisible>();
-                if (iVisible != null)
+                foreach (IGameObject gameObject in layer.GetGameObjects())
                 {
-                    if (iVisible.Visible)
-                        hasCheckedChild = true;
-                    else
-                        hasUncheckedChild = true;
+                    IVisible iVisible = gameObject.As<IVisible>();
+                    if (iVisible != null)
+                    {
+                        if (iVisible.Visible)
+                            hasCheckedChild = true;
+                        else
+                            hasUncheckedChild = true;
+                    }
                 }
             }
 
             if (hasCheckedChild && !hasUncheckedChild)
                 return CheckState.Checked;
-            else if (hasUncheckedChild && !hasCheckedChild)
+            if (hasUncheckedChild && !hasCheckedChild)
                 return CheckState.Unchecked;
-            else
-                return CheckState.Indeterminate;
+
+            return CheckState.Indeterminate;
         }
 
         #endregion
@@ -324,20 +323,17 @@ namespace LevelEditor
 
         void DomNode_ChildInserted(object sender, ChildEventArgs e)
         {
-            if (IsLayerItem(e.Child))
-                ItemInserted.Raise(this, new ItemInsertedEventArgs<object>(e.Index, e.Child, e.Parent));
+            ItemInserted.Raise(this, new ItemInsertedEventArgs<object>(e.Index, e.Child, e.Parent));
         }
 
         void DomNode_ChildRemoved(object sender, ChildEventArgs e)
         {
-            if (IsLayerItem(e.Child))
-                ItemRemoved.Raise(this, new ItemRemovedEventArgs<object>(e.Index, e.Child, e.Parent));
+            ItemRemoved.Raise(this, new ItemRemovedEventArgs<object>(e.Index, e.Child, e.Parent));
         }
 
         void DomNode_AttributeChanged(object sender, AttributeEventArgs e)
         {            
-            if (IsLayerItem(e.DomNode))
-                ItemChanged.Raise(this, new ItemChangedEventArgs<object>(e.DomNode));            
+            ItemChanged.Raise(this, new ItemChangedEventArgs<object>(e.DomNode));            
         }
        
 
@@ -406,11 +402,7 @@ namespace LevelEditor
             if (items == null || items.Length == 0)
                 return null;
             return Adapters.AsIEnumerable<DomNode>(items);
-        }
-        private static bool IsLayerItem(DomNode node)
-        {
-            return node.Is<ILayer>() || node.Is<IReference<IGameObject>>();
-        }
+        }        
         private object m_activeItem;
     }
 }

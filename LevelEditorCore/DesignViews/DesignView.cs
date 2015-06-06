@@ -1,23 +1,23 @@
 ﻿//Copyright © 2014 Sony Computer Entertainment America LLC. See License.txt.
 
 using System;
+using System.ComponentModel.Composition;
 using System.Drawing;
 using System.Windows.Forms;
 using System.ComponentModel;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 
 using Sce.Atf;
 using Sce.Atf.Adaptation;
 using Sce.Atf.Controls;
-using Sce.Atf.VectorMath;
 
 
-using ControlSchemes = Sce.Atf.Rendering.ControlSchemes;
 using MayaControlScheme = Sce.Atf.Rendering.MayaControlScheme;
 using MayaLaptopControlScheme = Sce.Atf.Rendering.MayaLaptopControlScheme;
 using MaxControlScheme = Sce.Atf.Rendering.MaxControlScheme;
-using CameraController = Sce.Atf.Rendering.CameraController;
+using ControlSchemes = Sce.Atf.Rendering.ControlSchemes;
 
 
 namespace LevelEditorCore
@@ -31,12 +31,8 @@ namespace LevelEditorCore
         {            
             QuadView = new QuadPanelControl();
             CameraController.LockOrthographic = true;
-
-            m_frequency = Stopwatch.Frequency;
-            m_baseTicks = Stopwatch.GetTimestamp();
-            m_lastTicks = m_baseTicks;
         }
-        
+
         #region IDesignView Members
 
         public Control HostControl
@@ -49,19 +45,26 @@ namespace LevelEditorCore
             get { return (DesignViewControl)QuadView.ActiveControl; }
         }
 
-        public IEnumerable<DesignViewControl> Views
+        /// <summary>
+        /// Gets all the DesignViewControls</summary>
+        public IEnumerable<DesignViewControl> AllViews
         {
-            get 
+            get
             {
                 foreach (Control ctrl in QuadView.Controls)
-                {                    
+                {
                     DesignViewControl view = ctrl as DesignViewControl;
-                    if (view != null && view.Width > 1 && view.Height > 1)
-                    {
-                        yield return view;                        
-                    }
+                    if (view != null) yield return view;                    
                 }                                    
             }
+        }
+
+        /// <summary>
+        /// Gets only DesigViewControls
+        /// for the current ViewMode</summary>
+        public IEnumerable<DesignViewControl> Views
+        {
+            get {return AllViews.Where(view => view.Width > 1 && view.Height > 1); }
         }
 
         private ViewModes m_viewMode = ViewModes.Quad;
@@ -184,65 +187,53 @@ namespace LevelEditorCore
             set;
         }
 
-        public void InvalidateViews()
-        {
-            foreach (DesignViewControl view in Views)
-                view.Invalidate();
-        }
-      
-        /// <summary>
-        /// Advances update/render by the given frame time.</summary>
-        /// <param name="ft"></param>
-        public abstract void Tick(FrameTime ft);
-
-        /// <summary>
-        /// Computes frame time and calls
-        /// Tick(FrameTime ft) to advance
-        /// update/rendering by on tick.
-        /// </summary>
-        public void Tick()
-        {
-            FrameTime ft = GetFrameTime();
-            Tick(ft);
-        }
-
-        /// <summary>
-        /// Gets next frame time
-        /// Used by Tick() and OnPaint</summary>        
-        public FrameTime GetFrameTime()
-        {
-            long curTick = Stopwatch.GetTimestamp();
-            double dt = (double)(curTick - m_lastTicks) / m_frequency;
-            m_lastTicks = curTick;
-            double TotalTime = (double)(m_lastTicks - m_baseTicks) / m_frequency;
-            return  new FrameTime(TotalTime, (float)dt);            
-        }
-        #endregion
-
-        #region ISnapSettings Members
-
-        public bool SnapVertex { get; set; }
-        public bool RotateOnSnap { get; set; }
-        public SnapFromMode SnapFrom { get; set; }
-        public bool ManipulateLocalAxis { get; set; }
-
-        #endregion
-
-      
-        /// <summary>
-        /// Gets or sets the background color of the design controls</summary>        
+        [DefaultValue(typeof(Color), "0xFF606060")]
         public Color BackColor
         {
             get { return m_backColor; }
             set
             {
                 m_backColor = value;
-                foreach (DesignViewControl view in QuadView.Controls)
-                {
-                    view.BackColor = m_backColor;                         
-                }
+                InvalidateViews();
             }
         }
+        private Color m_backColor = Color.FromArgb(96, 96, 96);
+
+        public void InvalidateViews()
+        {
+            if (m_gameLoop != null)
+            {
+                m_gameLoop.Update();
+                m_gameLoop.Render();
+            }
+        }
+        #endregion
+
+        #region ISnapSettings Members
+
+        [DefaultValue(false)]
+        public bool SnapVertex { get; set; }
+
+        [DefaultValue(false)]
+        public bool RotateOnSnap { get; set; }
+
+        [DefaultValue(SnapFromMode.Pivot)]
+        public SnapFromMode SnapFrom { get; set; }
+
+        [DefaultValue(false)]
+        public bool ManipulateLocalAxis { get; set; }
+
+        [DefaultValue((float)(5.0f * (Math.PI / 180.0f)))]
+        public float SnapAngle
+        {
+            get{return m_SnapAngle;}
+            set
+            {
+                m_SnapAngle = MathUtil.Clamp(value,0, (float) (2.0 * Math.PI));
+            }
+        }
+
+        #endregion
 
         /// <summary>
         /// Distance to the camera's far clipping plane.</summary>        
@@ -284,38 +275,21 @@ namespace LevelEditorCore
                 m_controlScheme = value;
             }
         }
-        
-        /// <summary>
-        /// The angle, in degrees, that rotations should be an integer multiple of.</summary>        
-        [DefaultValue((float)(5.0f * (Math.PI / 180.0f)))]
-        public float SnapAngle
-        {
-            get
-            {
-                return (float)(m_SnapAngle * (180.0f / Math.PI)); 
-            }
-            set
-            {
-                m_SnapAngle = (float)(value * (Math.PI / 180.0f));                
-            }
-        }
-       
-        protected int DefaultSplitterThickness = 8;
-        protected QuadPanelControl QuadView;
+                   
+        protected const int DefaultSplitterThickness = 8;
+        protected readonly QuadPanelControl QuadView;
 
         #region private members
-                
+
+        [Import(AllowDefault = false)]
+        private IGameLoop m_gameLoop;
+
         private float m_cameraFarZ = 2048;
-        private ControlSchemes m_controlScheme;
-        private float m_SnapAngle;
+        private ControlSchemes m_controlScheme = ControlSchemes.Maya;
+        private float m_SnapAngle = (float)(5.0 * (Math.PI / 180.0f));
         private IManipulator m_manipulator;
         private IValidationContext m_validationContext;
-        private Color m_backColor = SystemColors.ControlDark;
-
-        // update and render variables.
-        private double m_frequency;
-        private long m_baseTicks;
-        private long m_lastTicks;
-        #endregion       
+                
+        #endregion                 
     }
 }

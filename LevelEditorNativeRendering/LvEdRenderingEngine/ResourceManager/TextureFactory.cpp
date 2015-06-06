@@ -1,6 +1,5 @@
 //Copyright © 2014 Sony Computer Entertainment America LLC. See License.txt.
 
-#include <D3DX11tex.h>
 #include "../Core/Utils.h"
 
 #include "../Renderer/Texture.h"
@@ -10,8 +9,9 @@
 
 #include "ResourceManager.h"
 #include "TextureFactory.h"
-#include <DxErr.h>
 #include "../DirectX/DXUtil.h"
+#include "../Renderer/GpuResourceFactory.h"
+
 
 namespace LvEdEngine
 {
@@ -44,34 +44,43 @@ bool TextureFactory::LoadResource(Resource* resource, const WCHAR * filename)
         return false;
     }
 
+    Texture* tex = (Texture*)resource;    
+
+    bool forceSRGB
+        = tex->GetTextureType() == TextureType::DIFFUSE
+        && !DirectX::IsSRGB(metadata.format);
+    
+    
     ID3D11Texture2D* dxtex = NULL;
     std::wstring ext = FileUtils::GetExtensionLower(filename);
     // generate full mip chains for non dds file.
     if(ext != L".dds")
     {
-        const DirectX::Image* srcImage = sourceScratch.GetImage(0, 0, 0);
+        const DirectX::Image* srcImage = sourceScratch.GetImage(0, 0, 0);        
         DirectX::ScratchImage mipScratch;
-        hr = DirectX::GenerateMipMaps(*srcImage, DirectX::TEX_FILTER_LINEAR, 0, mipScratch, false);
+
+        DWORD filter = DirectX::TEX_FILTER_LINEAR;
+        if( forceSRGB ) filter |= DirectX::TEX_FILTER_SRGB;
+
+        hr = DirectX::GenerateMipMaps(*srcImage, filter, 0, mipScratch, false);
         if (Logger::IsFailureLog(hr, L"DirectX::GenerateMipMaps"))
             return false;    
-
-        hr = DirectX::CreateTexture(m_device, mipScratch.GetImages(), mipScratch.GetImageCount(), mipScratch.GetMetadata(),
-                                    (ID3D11Resource**)&dxtex);
-       
-
+              
+        hr = DirectX::CreateTextureEx(m_device, mipScratch.GetImages(), mipScratch.GetImageCount(), mipScratch.GetMetadata(),
+            D3D11_USAGE_DEFAULT, D3D11_BIND_SHADER_RESOURCE, 0, 0, forceSRGB,(ID3D11Resource**)&dxtex);      
     }
     else
     {
-        hr = DirectX::CreateTexture(m_device, sourceScratch.GetImages(), sourceScratch.GetImageCount(), metadata,(ID3D11Resource**)&dxtex);
+        hr = DirectX::CreateTextureEx(m_device, sourceScratch.GetImages(), sourceScratch.GetImageCount(), metadata,
+            D3D11_USAGE_DEFAULT, D3D11_BIND_SHADER_RESOURCE, 0, 0, forceSRGB,(ID3D11Resource**)&dxtex);
     }
 
     if (Logger::IsFailureLog(hr, L"DirectX::CreateTexture"))
             return false;    
-    
-    ID3D11ShaderResourceView* texview = CreateTextureView(m_device, dxtex);
+        
+    ID3D11ShaderResourceView* texview = GpuResourceFactory::CreateTextureView(dxtex);
     if(!dxtex) return false;
-
-    Texture* tex = (Texture*)resource;    
+    
     tex->Set(dxtex,texview);    
     return true;
 }

@@ -1,8 +1,6 @@
 ﻿//Copyright © 2014 Sony Computer Entertainment America LLC. See License.txt.
 
-
 using System.ComponentModel.Composition;
-
 using Sce.Atf;
 
 using LevelEditorCore;
@@ -22,7 +20,7 @@ namespace LevelEditor
             if (resource == null) return null;
 
             IGameObject gob = null;
-            if (resource.Type == ResourceTypes.Geometry)
+            if (resource.Type == ResourceTypes.Model)
             {
                 Locator locator = Locator.Create();
                 IReference<IResource> resRef = ResourceReference.Create(resource);                

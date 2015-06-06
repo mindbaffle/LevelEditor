@@ -2,13 +2,13 @@
 
 #include "CurveGob.h"
 #include <algorithm>
-#include "D3DX10Math.h"
 
-#include "../Renderer/RenderUtil.h"
+
 #include "../Renderer/RenderBuffer.h"
 #include "../Renderer/Model.h"
 #include "../Renderer/DeviceManager.h"
 #include "../Core/Logger.h"
+#include "../Renderer/GpuResourceFactory.h"
 
 namespace LvEdEngine
 {
@@ -94,12 +94,12 @@ void CurveGob::InvalidateWorld()
 //-----------------------------------------------------------------------------------------------------------------------------------
 // push Renderable nodes
 //virtual
-bool CurveGob::GetRenderables(RenderableNodeCollector* collector, RenderContext* context)
+void CurveGob::GetRenderables(RenderableNodeCollector* collector, RenderContext* context)
 {
-    if(!IsVisible(context->Cam().GetFrustum()) || m_points.size()<2 )
-    {
-        return false;
-    }
+	if (!IsVisible(context->Cam().GetFrustum()) || m_points.size() < 2)
+		return;
+    
+	super::GetRenderables(collector, context);
     
     RenderableNode r;
     r.mesh = &m_mesh;
@@ -116,15 +116,17 @@ bool CurveGob::GetRenderables(RenderableNodeCollector* collector, RenderContext*
     {
         (*it)->GetRenderables(collector,context);
     }
-    return true;
 }
 
 
 //-----------------------------------------------------------------------------------------------------------------------------------
 
-void CurveGob::Update(float dt)
+bool useD3dX = true;
+void CurveGob::Update(const FrameTime& fr, UpdateTypeEnum updateType)
 {
-    UpdateWorldTransform();
+    bool boundDirty = m_boundsDirty;
+    super::Update(fr,updateType);
+    m_boundsDirty = boundDirty;
 
     if(!m_boundsDirty) return;
 
@@ -146,7 +148,7 @@ void CurveGob::Update(float dt)
     m_localBounds.Transform(m_points[0]->GetTransform());
     for( auto it = m_points.begin(); it != m_points.end(); ++it)
     {
-        (*it)->Update(dt);
+        (*it)->Update(fr,updateType);
         AABB local = (*it)->GetLocalBounds();
         local.Transform((*it)->GetTransform());
         m_localBounds.Extend(local);
@@ -236,12 +238,10 @@ void CurveGob::Update(float dt)
                 float3 p3 = points[index+2];
 
                 for(int i = 0; i < m_steps; ++i)
-                {
-                    float3 out;
-                    float s = (float)i / (float)m_steps;
-                    D3DXVec3CatmullRom((D3DXVECTOR3*)&out, (D3DXVECTOR3*)&p0, (D3DXVECTOR3*)&p1, (D3DXVECTOR3*)&p2, (D3DXVECTOR3*)&p3, s);            
-                    verts.push_back(out);
-                }
+                {                    
+                    float s = (float)i / (float)m_steps;                    
+                    verts.push_back(Vec3CatmullRom(p0,p1,p2,p3,s));
+                }                
             }    
             verts.push_back(points[sz]);           
             break;
@@ -282,16 +282,15 @@ void CurveGob::Update(float dt)
     m_mesh.ComputeBound();
     if(m_needsRebuild)
     {                       
-        m_mesh.vertexBuffer = CreateVertexBuffer(gD3D11->GetDevice(), VertexFormat::VF_P, (void*)&verts[0], (uint32_t)verts.size(), D3D11_USAGE_DYNAMIC);        
+        m_mesh.vertexBuffer = GpuResourceFactory::CreateVertexBuffer(&verts[0], VertexFormat::VF_P, (uint32_t)verts.size(), BufferUsage::DYNAMIC);
     }
     else
     {
         ID3D11DeviceContext* context = gD3D11->GetImmediateContext();
         assert(m_mesh.vertexBuffer != NULL);        
-        UpdateVertexBuffer(context, m_mesh.vertexBuffer, m_mesh.vertexBuffer->GetFormat(), (void*)&verts[0], (uint32_t)verts.size());        
-    }
-
-    // ok, we are updated.
+        m_mesh.vertexBuffer->Update(context,&verts[0],(uint32_t)verts.size());
+    }    
+    
     m_needsRebuild = false;    
 }
 

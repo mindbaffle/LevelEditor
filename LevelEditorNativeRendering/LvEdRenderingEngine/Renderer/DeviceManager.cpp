@@ -4,7 +4,6 @@
 #include "../Core/Logger.h"
 #include "../Core/Utils.h"
 #include "DeviceManager.h"
-#include <DxErr.h>
 
 namespace LvEdEngine
 {
@@ -37,6 +36,7 @@ DeviceManager::DeviceManager(void)
 
     int i = 0;
     int adapterIndex = 0;
+    IDXGIOutput* output;
 
     printf("Available DXGIAdapters:\n");
     while(m_pDXGIFactory1->EnumAdapters1(i, &pAdapter) != DXGI_ERROR_NOT_FOUND) 
@@ -44,6 +44,22 @@ DeviceManager::DeviceManager(void)
         DXGI_ADAPTER_DESC1 descr;
         pAdapter->GetDesc1(&descr);
         wprintf(L"\t%s\n",descr.Description);
+
+
+        uint32_t j = 0;
+       while(pAdapter->EnumOutputs(j, &output) != DXGI_ERROR_NOT_FOUND)
+       {
+
+           DXGI_OUTPUT_DESC outdescr;
+           output->GetDesc(&outdescr);
+           wprintf(L"\t\toutput Name: %s\n",outdescr.DeviceName);
+           wprintf(L"\t\toutput IsAttached: %d\n",outdescr.AttachedToDesktop);
+           
+           j++;
+           output->Release();
+           output = NULL;
+       }
+
 
         // choose discrete graphics over integrated.
         if(adapterIndex == 0 && (descr.VendorId == nvidia || descr.VendorId == ati))
@@ -89,6 +105,10 @@ DeviceManager::DeviceManager(void)
     Logger::Log(OutputMessageType::Info, L"%s\n",pdescr.Description);
 
 
+    // Note: If you set the pAdapter parameter to a non-NULL value,
+    //      you must also set the DriverType parameter 
+    //      to the D3D_DRIVER_TYPE_UNKNOWN
+    
 	// create d3d11 device on the first graphics adapter.
 	hr =  D3D11CreateDevice(
 			pAdapter,
@@ -153,18 +173,21 @@ DeviceManager::~DeviceManager(void)
     }
     
     SAFE_RELEASE(m_pImmediateContext);    
+
+     /*#ifdef _DEBUG
+    ID3D11Debug* dbg;
+     m_pd3dDevice->QueryInterface(__uuidof(ID3D11Debug), reinterpret_cast<void**>(&dbg));
+     if(dbg)
+     {
+         dbg->ReportLiveDeviceObjects(D3D11_RLDO_DETAIL);            
+     }
+#endif */
+
     SAFE_RELEASE(m_pd3dDevice);
     SAFE_RELEASE(m_pDXGIFactory1);
 
     
-   /* #ifdef _DEBUG
-    ID3D11Debug* dbg;
-     m_pd3dDevice->QueryInterface(__uuidof(ID3D11Debug), reinterpret_cast<void**>(&dbg));
-     if(m_dbg)
-     {
-         m_dbg->ReportLiveDeviceObjects(D3D11_RLDO_DETAIL);            
-     }
-#endif */
+   
 
 
     Logger::Log(OutputMessageType::Info, "shutdown DX11\n");

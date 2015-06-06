@@ -1,7 +1,7 @@
 //Copyright © 2014 Sony Computer Entertainment America LLC. See License.txt.
 
-#include "../Core/NonCopyable.h"
 #include "WireFrameShader.h"
+#include "../Core/NonCopyable.h"
 #include <D3D11.h>
 #include "Renderable.h"
 #include "RenderBuffer.h"
@@ -10,11 +10,18 @@
 #include "RenderContext.h"
 #include "RenderState.h"
 #include "Model.h"
-#include <DxErr.h>
+#include "GpuResourceFactory.h"
 
 using namespace LvEdEngine;
 
 
+void WireFrameShader::Update(const FrameTime& fr, UpdateTypeEnum updateType)
+{
+	m_theta += fr.ElapsedTime * TwoPi;
+	if (m_theta >= TwoPi) m_theta -= TwoPi;
+	else if (m_theta < 0.0f) m_theta += TwoPi;
+	m_diffuseModulator = 0.5f * sinf(m_theta) + 1.0f;
+}
 
 void WireFrameShader::Begin(RenderContext* context)
 {
@@ -23,24 +30,23 @@ void WireFrameShader::Begin(RenderContext* context)
     
     ID3D11DeviceContext* d3dContext = context->Context();
 
-	CbPerFrame cb;    
-    cb.viewport = context->ViewPort();
-    Matrix::Transpose(m_rcntx->Cam().View(),cb.viewXform);
-    Matrix::Transpose(m_rcntx->Cam().Proj(),cb.projXform);	
-	
-    UpdateConstantBuffer(d3dContext,m_cbPerFrame,&cb,sizeof(cb));
-	
-	d3dContext->VSSetConstantBuffers(0,1,&m_cbPerFrame);    
-    d3dContext->VSSetConstantBuffers(1,1,&m_cbPerObject);
-    d3dContext->GSSetConstantBuffers(0,1,&m_cbPerFrame);            
-    d3dContext->PSSetConstantBuffers(1,1,&m_cbPerObject);	
+    m_cbPerFrame.Data.viewport = context->ViewPort();
+    Matrix::Transpose(m_rcntx->Cam().View(),m_cbPerFrame.Data.viewXform);
+    Matrix::Transpose(m_rcntx->Cam().Proj(),m_cbPerFrame.Data.projXform);	
+    m_cbPerFrame.Update(d3dContext);
+	    
+    auto perframe = m_cbPerFrame.GetBuffer();
+    auto perObject = m_cbPerObject.GetBuffer();
+	d3dContext->VSSetConstantBuffers(0,1,&perframe);    
+    d3dContext->VSSetConstantBuffers(1,1,&perObject);
+    d3dContext->GSSetConstantBuffers(0,1,&perframe);            
+    d3dContext->PSSetConstantBuffers(1,1,&perObject);	
 
     d3dContext->VSSetShader(m_vsShader,NULL,0);
     d3dContext->GSSetShader(m_gsShader,NULL,0);
     d3dContext->PSSetShader(m_psShader,NULL,0);
     d3dContext->IASetInputLayout( m_layoutP);
-    d3dContext->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-
+    
     d3dContext->RSSetState(m_rsFillCullBack);
     d3dContext->OMSetDepthStencilState(m_dpLessEqual,0);
 
@@ -68,15 +74,28 @@ void WireFrameShader::SetCullMode(CullModeEnum cullMode)
 
 
 void WireFrameShader::DrawNodes(const RenderNodeList& renderNodes)
-{    
-    CbPerObject cb;
+{        
     ID3D11DeviceContext* d3dContext = m_rcntx->Context();
     for ( auto it = renderNodes.begin(); it != renderNodes.end(); ++it )
     {
+        
         const RenderableNode& r = (*it);
-        Matrix::Transpose(r.WorldXform,cb.worldXform);   
-        cb.color = r.diffuse;
-        UpdateConstantBuffer(d3dContext,m_cbPerObject,&cb,sizeof(cb));
+		bool selected = (m_rcntx->selection.find(r.objectId) != m_rcntx->selection.end());
+		
+        Matrix::Transpose(r.WorldXform,m_cbPerObject.Data.worldXform);   
+		m_cbPerObject.Data.color = r.diffuse;
+
+		if (selected)
+		{
+			//float f = Lerp(0.5f, 1.2f, m_diffuseModulator);
+			//float4 di = m_rcntx->State()->GetSelectionColor() * f;
+			float4 di = r.diffuse * m_diffuseModulator;
+			di.w = 1;			
+			m_cbPerObject.Data.color = di;
+		}
+
+
+        m_cbPerObject.Update(d3dContext);        
         uint32_t stride = r.mesh->vertexBuffer->GetStride();
         uint32_t offset = 0;
         uint32_t startIndex  = 0;
@@ -85,8 +104,9 @@ void WireFrameShader::DrawNodes(const RenderNodeList& renderNodes)
         ID3D11Buffer* d3dvb  = r.mesh->vertexBuffer->GetBuffer();
         ID3D11Buffer* d3dib  = r.mesh->indexBuffer->GetBuffer();
 
+        d3dContext->IASetPrimitiveTopology( (D3D11_PRIMITIVE_TOPOLOGY)r.mesh->primitiveType );                       
         d3dContext->IASetVertexBuffers( 0, 1, &d3dvb, &stride, &offset );
-        d3dContext->IASetIndexBuffer(d3dib,DXGI_FORMAT_R32_UINT,0);    
+        d3dContext->IASetIndexBuffer(d3dib,(DXGI_FORMAT) r.mesh->indexBuffer->GetFormat(),0);    
         d3dContext->DrawIndexed(indexCount,startIndex,startVertex);
     }
 }
@@ -96,9 +116,12 @@ WireFrameShader::WireFrameShader(ID3D11Device* device)
 {    
     m_rcntx = NULL;
     m_gsShader = NULL;
+	m_diffuseModulator = 0.0f;
+	m_theta = 0.0f;
+
     // create cbuffers.
-    m_cbPerFrame  = CreateConstantBuffer(device, sizeof(CbPerFrame));
-    m_cbPerObject = CreateConstantBuffer(device, sizeof(CbPerObject));
+    m_cbPerFrame.Construct(device);
+    m_cbPerObject.Construct(device);
         
     ID3DBlob* vsBlob = CompileShaderFromResource(L"WireFrameShader.hlsl", "VSSolidWire","vs_4_0", NULL);    
     ID3DBlob* gsBlob = CompileShaderFromResource(L"WireFrameShader.hlsl", "GSSolidWire","gs_4_0", NULL);    
@@ -108,22 +131,17 @@ WireFrameShader::WireFrameShader(ID3D11Device* device)
     assert(gsBlob);
     assert(psBlob);
     
-    m_vsShader = CreateVertexShader(device, vsBlob);
-    m_gsShader = CreateGeometryShader(device, gsBlob);
-    m_psShader = CreatePixelShader(device, psBlob);
+    m_vsShader = GpuResourceFactory::CreateVertexShader(vsBlob);
+    m_gsShader = GpuResourceFactory::CreateGeometryShader(gsBlob);
+    m_psShader = GpuResourceFactory::CreatePixelShader(psBlob);
     
     assert(m_vsShader);
     assert(m_gsShader);
     assert(m_psShader);
     
-    // Define the input layout
-    D3D11_INPUT_ELEMENT_DESC layoutP[] =
-    {
-       { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0 },        
-    };
-   
+    
     // create input layout
-    m_layoutP = CreateInputLayout(device, vsBlob, layoutP, ARRAYSIZE( layoutP ));
+    m_layoutP = GpuResourceFactory::CreateInputLayout(vsBlob, VertexFormat::VF_P);
     assert(m_layoutP);
 
     // release the blobs
@@ -132,7 +150,7 @@ WireFrameShader::WireFrameShader(ID3D11Device* device)
     psBlob->Release();
 
     // create state blocks
-    RenderStateCache* rsCache = RenderContext::Inst()->GetRenderStateCache();
+    RSCache* rsCache = RSCache::Inst();
     D3D11_RASTERIZER_DESC rsDcr = rsCache->GetDefaultRsDcr();
     rsDcr.CullMode =  D3D11_CULL_NONE;
     rsDcr.MultisampleEnable = true;
@@ -156,9 +174,7 @@ WireFrameShader::WireFrameShader(ID3D11Device* device)
     rtblendDcr.BlendEnable = TRUE;
     rtblendDcr.SrcBlend = D3D11_BLEND_SRC_ALPHA;
     rtblendDcr.DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
-    rtblendDcr.BlendOp = D3D11_BLEND_OP_ADD;
-    //rtblendDcr.SrcBlendAlpha = D3D11_BLEND_SRC_ALPHA;
-    //rtblendDcr.DestBlendAlpha = D3D11_BLEND_DEST_ALPHA;
+    rtblendDcr.BlendOp = D3D11_BLEND_OP_ADD;    
     rtblendDcr.SrcBlendAlpha = D3D11_BLEND_ONE;
     rtblendDcr.DestBlendAlpha = D3D11_BLEND_ZERO;
     rtblendDcr.BlendOpAlpha = D3D11_BLEND_OP_ADD;
@@ -172,9 +188,7 @@ WireFrameShader::WireFrameShader(ID3D11Device* device)
 // --------------------------------------------------------------------------------------------------
 WireFrameShader::~WireFrameShader()
 {
-
-    SAFE_RELEASE(m_cbPerFrame);
-    SAFE_RELEASE(m_cbPerObject);    
+    
     SAFE_RELEASE(m_layoutP);
     SAFE_RELEASE(m_vsShader);
     SAFE_RELEASE(m_psShader);

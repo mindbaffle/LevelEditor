@@ -11,28 +11,35 @@ using Sce.Atf.Applications;
 
 using LevelEditorCore;
 
+
 using ViewTypes = Sce.Atf.Rendering.ViewTypes;
 
 namespace RenderingInterop
 {
-
-    [Export(typeof(IRenderLoop))]
-    [Export(typeof(IDesignView))]
+    
+    [Export(typeof(ISnapSettings))]
+    [Export(typeof(IDesignView))]    
     [Export(typeof(DesignView))]
     [PartCreationPolicy(CreationPolicy.Shared)]
     public class NativeDesignView : DesignView
-    {
+    {        
         public NativeDesignView()
-        {
-            GameEngine.Initialize(QuadView.Handle);
-            Util3D.Init();
-
+        {                       
             QuadView.TopLeft = new NativeDesignControl(this) { ViewType = ViewTypes.Perspective };
             QuadView.TopRight = new NativeDesignControl(this) { ViewType = ViewTypes.Right };
             QuadView.BottomLeft = new NativeDesignControl(this) { ViewType = ViewTypes.Top };
             QuadView.BottomRight = new NativeDesignControl(this) { ViewType = ViewTypes.Front };
+
+            // set control names.            
+            QuadView.TopLeft.Name = "TopLeft";
+            QuadView.TopRight.Name = "TopRight";
+            QuadView.BottomLeft.Name = "BottomLeft";
+            QuadView.BottomRight.Name = "BottomRight";
+
+
+
             ViewMode = ViewModes.Single;
-            ContextChanged += new EventHandler(NativeDesignView_ContextChanged);            
+            ContextChanged += NativeDesignView_ContextChanged;
         }
 
         void NativeDesignView_ContextChanged(object sender, EventArgs e)
@@ -60,16 +67,7 @@ namespace RenderingInterop
         }
 
         private ISelectionContext m_selectionContext;
-
-        public override void Tick(FrameTime ft)
-        {
-            GameEngine.SetGameLevel(Context.Cast<NativeObjectAdapter>());
-            GameEngine.Update(ft.TotalTime, ft.ElapsedTime, false);
-            foreach (NativeDesignControl view in Views)
-            {                               
-                view.Render();
-            }
-        }                
+        
     }
 
 }

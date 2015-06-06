@@ -1,6 +1,6 @@
 //Copyright © 2014 Sony Computer Entertainment America LLC. See License.txt.
 
-#include <d3dx9math.h>
+#include "../VectorMath/V3dMath.h"
 #include "../Renderer/Model.h"
 #include "../Core/Utils.h"
 #include "../Core/Logger.h"
@@ -43,8 +43,8 @@ void ColladaModelFactory::ProcessInput(Model3dBuilder * builder, xml_node* input
 {
     const char * semantic = GetAttributeText(input, "semantic", true);
     const char * sourceName = GetAttributeText(input, "source", true);
-    if (!semantic)          { return; }
-    if (!sourceName)        { return; }
+    if (!semantic)  return; 
+    if (!sourceName) return;
     if (*sourceName!='#')
     {
         ParseError("source, '%s', expected to start with '#'\n", sourceName);
@@ -141,6 +141,7 @@ void ColladaModelFactory::ProcessSources(std::vector<Source> * sources, Model3dB
 
         source.id = id;
         source.stride = atoi(stride);
+       
 
         // get values
         xml_node * float_array = FindChildByName(xmlSource, "float_array");
@@ -275,8 +276,8 @@ void ColladaModelFactory::ParseEffectTexture( xml_node* node, const char * name,
     if(node)
     {
         // get 'texture' descendant
-        xml_node* parentNode = FindFirstByName(node, name);
-        xml_node* textureNode = FindFirstByName(parentNode, "texture");
+		xml_node* childNode = FindFirstByName(node, name);
+		xml_node* textureNode = FindFirstByName(childNode, "texture");
         const char * val = GetAttributeText(textureNode, "texture", false);
         if(val)
         {
@@ -339,17 +340,8 @@ void ColladaModelFactory::ProcessEffect(Model3dBuilder * builder, xml_node* node
             {
                 ParseError("<surface> missing child <init_from>\n");
                 continue;
-            }
-
-            // get and validate 'first_node'
-            xml_node * firstNode = init_from->first_node();
-            if (!firstNode)
-            {
-                ParseError("<surface><init_from> missing child\n");
-                continue;
-            }
-
-            const char * imageName = firstNode->value(); 
+            }   
+			const char * imageName = init_from->value();
             builder->m_material.surface2image[surfaceName] = imageName;
         }
     }
@@ -364,7 +356,7 @@ void ColladaModelFactory::ProcessEffect(Model3dBuilder * builder, xml_node* node
             const char * samplerName = GetAttributeText(sampler->parent(), "sid", true);
             if (!samplerName) { continue; }
 
-            //ie: <sampler2D><source>filename</source></sampler2D>
+            //ie: <sampler2D><source>surfacename</source></sampler2D>
             // get and validate 'source'
             xml_node * source = FindChildByName(sampler, "source");
             if (!source)
@@ -373,24 +365,21 @@ void ColladaModelFactory::ProcessEffect(Model3dBuilder * builder, xml_node* node
                 continue;
             }
 
-            // get and validate 'first_node'
-            xml_node * firstNode = source->first_node();
-            if (!firstNode)
-            {
-                ParseError("<sampler2D><source> missing child\n");
-                continue;
-            }
-
-            const char * surfaceName = firstNode->value();
+			const char* surfaceName = source->value();
+			if (!surfaceName)
+			{
+				ParseError("<sampler2D><source>  missing value   </source></sampler2D>\n");
+				continue;
+			}			
             builder->m_material.sampler2surface[samplerName] = surfaceName;
         }
     }
 
     // get the 1st technique
     std::string samplerName;
-    xml_node* technique = FindFirstByName(node, "technique");
+	xml_node* technique = FindChildByName(node->first_node(), "technique");	
     if(technique)
-    {   // process 'standard' technique
+    {   // process 'standard' technique		
         ParseEffectColor(technique, "diffuse", &mat->diffuse);
         ParseEffectColor(technique, "ambient", &mat->ambient);
         ParseEffectColor(technique, "specular", &mat->specular);
@@ -398,13 +387,22 @@ void ColladaModelFactory::ProcessEffect(Model3dBuilder * builder, xml_node* node
         ParseEffectFloat(technique, "shininess", &mat->power);
         ParseEffectTexture(technique, "diffuse", &samplerName);
     }
-    mat->texNames[TextureType::DIFFUSE] = GetTextureFileFromSampler(builder, samplerName);
+	mat->texNames[TextureType::DIFFUSE] = GetTextureFileFromSampler(builder, samplerName);
+
+	// find normal map
+	xml_node* extra = FindChildByName(technique, "extra");
+	xml_node* bump = FindFirstByName(extra, "bump");
+	xml_node* texture = FindChildByName(bump, "texture");
+	const char* sampName = GetAttributeText(texture, "texture", false);
+    if(sampName)
+        mat->texNames[TextureType::NORMAL] = GetTextureFileFromSampler(builder, sampName);
+	
 
     // process any 'bind' params
     std::vector<xml_node*> bindNodes;
     FindAllByName(technique, "bind", true, &bindNodes);
     for(auto it = bindNodes.begin(); it != bindNodes.end(); ++it)
-    {
+    {		
         xml_node* bind = (*it);
 
         const char* symbolName = GetAttributeText(bind, "symbol", true);
@@ -418,10 +416,11 @@ void ColladaModelFactory::ProcessEffect(Model3dBuilder * builder, xml_node* node
         }
         if(strcmp(symbolName, "NormalSampler")==0)
         {
-
             mat->texNames[TextureType::NORMAL] = GetTextureFileFromSampler(builder, std::string(symbolValue));
         }
     }
+
+
         
 }
 
@@ -442,13 +441,13 @@ void ColladaModelFactory::ProcessImage(Model3dBuilder * builder, xml_node* node)
 // ------------------------------------------------------------------------------------------------
 void ColladaModelFactory::GetTransform(xml_node* node, Matrix * out )
 {
-    D3DXMATRIX rotateX,rotateY,rotateZ,translate,scale,temp;
-    D3DXMatrixIdentity(&rotateX);
-    D3DXMatrixIdentity(&rotateY);
-    D3DXMatrixIdentity(&rotateZ);
-    D3DXMatrixIdentity(&translate);
-    D3DXMatrixIdentity(&scale);
-    D3DXMatrixIdentity(&temp);
+    Matrix rotateX,rotateY,rotateZ,translate,scale;
+    rotateX.MakeIdentity();
+    rotateY.MakeIdentity();
+    rotateZ.MakeIdentity();
+    translate.MakeIdentity();
+    scale.MakeIdentity();
+  
 
     for(xml_node* child = GetChildEle(node); child != NULL; child=GetNextEle(child))
     {
@@ -462,47 +461,62 @@ void ColladaModelFactory::GetTransform(xml_node* node, Matrix * out )
             if(strcmp(sid, "rotateX")==0)
             {
                 float4 temp;
-                if (!ParseVector4(child, &temp)) {
+                if (!ParseVector4(child, &temp))
+                {
                     ParseError("Failed to parse '%s' transform (expected 4 floats)'\n", sid);
-                } else {
-                    D3DXMatrixRotationX(&rotateX, temp.w);
+                } 
+                else 
+                {
+                    rotateX = Matrix::CreateRotationX(temp.w);                    
                 }
             }
             else if(strcmp(sid, "rotateY")==0)
             {
                 float4 temp;
-                if (!ParseVector4(child, &temp)) {
+                if (!ParseVector4(child, &temp)) 
+                {
                     ParseError("Failed to parse '%s' transform (expected 4 floats)'\n", sid);
-                } else {
-                    D3DXMatrixRotationY(&rotateY, temp.w);
+                } 
+                else 
+                {
+                    rotateY = Matrix::CreateRotationY(temp.w);                
                 }
             }
             else if(strcmp(sid, "rotateZ")==0)
             {
                 float4 temp;
-                if (!ParseVector4(child, &temp)) {
+                if (!ParseVector4(child, &temp)) 
+                {
                     ParseError("Failed to parse '%s' transform (expected 4 floats)'\n", sid);
-                } else {
-                    D3DXMatrixRotationZ(&rotateZ, temp.w);
+                } 
+                else
+                {
+                    rotateZ = Matrix::CreateRotationZ(temp.w);                    
                 }
             }
         }
         else if(strcmp(name, "translate")==0)
         {
             float3 temp;
-            if (!ParseVector3(child, &temp)) {
+            if (!ParseVector3(child, &temp)) 
+            {
                 ParseError("Failed to parse '%s' transform (expected 3 floats)'\n", name);
-            } else {
-                D3DXMatrixTranslation(&translate, temp.x, temp.y, temp.z);
+            } 
+            else 
+            {
+                translate = Matrix::CreateTranslation(temp);                
             }
         }
         else if(strcmp(name, "scale")==0)
         {
             float3 temp;
-            if (!ParseVector3(child, &temp)) {
+            if (!ParseVector3(child, &temp)) 
+            {
                 ParseError("Failed to parse '%s' transform (expected 3 floats)'\n", name);
-            } else {
-                D3DXMatrixScaling(&scale, temp.x, temp.y, temp.z);
+            } 
+            else
+            {
+                scale = Matrix::CreateScale(temp);                
             }
         }
         // unhandled transform node
@@ -512,13 +526,11 @@ void ColladaModelFactory::GetTransform(xml_node* node, Matrix * out )
         }
     }
 
-    D3DXMatrixMultiply(&temp, &temp, &scale);
-    D3DXMatrixMultiply(&temp, &temp, &rotateX);
-    D3DXMatrixMultiply(&temp, &temp, &rotateY);
-    D3DXMatrixMultiply(&temp, &temp, &rotateZ);
-    D3DXMatrixMultiply(&temp, &temp, &translate);
-    *out = *(Matrix*)&temp;
-
+    Matrix tmp = scale * rotateX;
+    tmp = tmp * rotateY;
+    tmp = tmp * rotateZ;
+    tmp = tmp * translate;
+    *out = tmp;
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -542,7 +554,7 @@ void ColladaModelFactory::ProcessController(xml_node * xmlController, ColladaMod
 
 
 // ------------------------------------------------------------------------------------------------
-Node* ColladaModelFactory::ProcessSceneNode(Model3dBuilder * builder, xml_node* node, Node* /*parent*/, ColladaModelFactory::ControllerToGeo * controllerToGeo)
+Node* ColladaModelFactory::ProcessSceneNode(Model3dBuilder * builder, xml_node* node, Node*, ColladaModelFactory::ControllerToGeo * controllerToGeo)
 {
     xml_node* instanceGeo = FindChildByName(node, "instance_geometry");
     xml_node* instanceController = FindChildByName(node, "instance_controller");
@@ -635,6 +647,7 @@ void ColladaModelFactory::ProcessChildNodes(Model3dBuilder * builder, xml_node* 
 
         // register with parent and model
         parent->children.push_back(modelNode);
+        modelNode->parent = parent;
 
         // process child nodes
         ProcessChildNodes(builder, node, modelNode, controllerToGeo);
@@ -691,6 +704,14 @@ void ColladaModelFactory::ProcessXml(xml_node * rootXml, Model3dBuilder * builde
             nodeName = "!missing-id!";
         }
         Node * rootNode = builder->m_model->CreateNode(nodeName);
+
+        xml_node* asset = rootXml->first_node("asset");
+        xml_node* upaxisNode =  asset->first_node("up_axis");        
+        
+        if(upaxisNode && strcmpi(upaxisNode->value(),"Z_UP") == 0)
+        {
+            rootNode->transform = Matrix::CreateRotationX(-PiOver2);
+        }
 
         builder->m_model->SetRoot(rootNode);
         ProcessChildNodes(builder, scene, rootNode, &controllerToGeo);

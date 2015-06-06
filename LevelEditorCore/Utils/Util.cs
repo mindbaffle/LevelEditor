@@ -152,8 +152,8 @@ namespace LevelEditorCore
         /// Creates Billboard matrix from the given parameters.</summary>        
         public static void CreateBillboard(Matrix4F matrix, Vec3F objectPos, Vec3F camPos, Vec3F camUp, Vector3 camLook)
         {
-            
-            Vector3 look = objectPos - camPos;
+
+            Vector3 look = camPos - objectPos;
             float len = look.LengthSquared;
             if (len < 0.0001f)
             {
@@ -196,27 +196,37 @@ namespace LevelEditorCore
             return matrix;
         }
 
-        public static void CalcAxisLengths(Camera camera, Vec3F objectPosW, out float s)
-        {            
-            float axisRatio = 0.24f;
 
+        /// <summary>
+        /// Calculates required scale such that when it applied to an 
+        /// object. The object maintain a constant size in pixel regardless of 
+        /// its distance from camera.
+        /// Used for computing size of 3d manipulators.</summary>
+        /// <param name="camera"></param>
+        /// <param name="objectPosW"></param>
+        /// <param name="sizeInPixels"></param>
+        /// <param name="viewHeight"></param>        
+        public static float CalcAxisScale(Camera camera,
+            Vec3F objectPosW,
+            float sizeInPixels,
+            float viewHeight)
+        {
             float worldHeight;
-            Matrix4F view = camera.ViewMatrix;
-            Vec3F objPosV;
-            view.Transform(objectPosW, out objPosV);
-            
             // World height on origin's z value
             if (camera.Frustum.IsOrtho)
             {
-                worldHeight = (camera.Frustum.Top - camera.Frustum.Bottom) / 2;
+                worldHeight = (camera.Frustum.Top - camera.Frustum.Bottom);
             }
             else
             {
-                worldHeight = -objPosV.Z * (float)Math.Tan(camera.Frustum.FovY / 2.0f);
+                Matrix4F view = camera.ViewMatrix;
+                Vec3F objPosV;
+                view.Transform(objectPosW, out objPosV);
+                worldHeight = 2.0f * Math.Abs(objPosV.Z) * (float)Math.Tan(camera.Frustum.FovY / 2.0f);
             }
-            s = (axisRatio*worldHeight);
+            return sizeInPixels * (worldHeight / viewHeight);
         }
-
+        
         public static void ZoomOnSphere(Camera cam, Sphere3F sphere)
         {
             float nearZ = cam.PerspectiveNearZ;
@@ -264,23 +274,33 @@ namespace LevelEditorCore
 
 
         /// <summary>
-        /// Find all objects of type T in all the open game documents</summary>        
-        public static IEnumerable<T> FindAll<T>()
-            where T : class
-        {                        
-            IGameDocumentRegistry gameDocumentRegistry = Globals.MEFContainer.GetExportedValue<IGameDocumentRegistry>();
-            foreach (IGameDocument subDoc in gameDocumentRegistry.Documents)
+        /// Find all the DomNodes of the type that is equal or derived 
+        /// from the given type.
+        /// if exact is true then only find DomNode that have exact type.        
+        /// </summary>
+        /// <param name="type">DomNodeType</param>
+        /// <param name="exact">if true then only consider exact match,
+        /// otherwise match any type that is equal or derived from the given type</param>
+        /// <returns></returns>
+        public static IEnumerable<DomNode> FindAll(DomNodeType type, bool exact = false)
+        {
+            if (type != null)
             {
-                DomNode folderNode = subDoc.RootGameObjectFolder.Cast<DomNode>();
-                foreach (DomNode childNode in folderNode.Subtree)
+                IGameDocumentRegistry gameDocumentRegistry = Globals.MEFContainer.GetExportedValue<IGameDocumentRegistry>();
+                if (gameDocumentRegistry != null)
                 {
-                    T t = childNode.As<T>();
-                    if (t != null)
-                        yield return t;                    
+                    foreach (IGameDocument doc in gameDocumentRegistry.Documents)
+                    {
+                        DomNode folderNode = doc.RootGameObjectFolder.Cast<DomNode>();
+                        foreach (DomNode childNode in folderNode.Subtree)
+                        {
+                            if ((exact && childNode.Type == type)
+                                || (!exact && type.IsAssignableFrom(childNode.Type)))
+                                yield return childNode;
+                        }
+                    }
                 }
             }
-
         }
-    
     }
 }

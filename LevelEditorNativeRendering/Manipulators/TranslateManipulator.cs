@@ -21,7 +21,7 @@ using AxisSystemType = Sce.Atf.Rendering.Dom.AxisSystemType;
 
 namespace RenderingInterop
 {
-    using HitRegion = RenderingInterop.TranslatorControl.HitRegion;
+    using HitRegion = TranslatorControl.HitRegion;
 
     [Export(typeof(IManipulator))]
     [PartCreationPolicy(CreationPolicy.Shared)]
@@ -47,15 +47,14 @@ namespace RenderingInterop
                 return false;
 
             Camera camera = vc.Camera;
-            float s;
-            Util.CalcAxisLengths(camera, HitMatrix.Translation, out s);
+            
             Matrix4F view = camera.ViewMatrix;
             Matrix4F vp = view  * camera.ProjectionMatrix;
             Matrix4F wvp = HitMatrix * vp;
             
             Ray3F rayL = vc.GetRay(scrPt,wvp);
 
-            m_hitRegion = m_translatorControl.Pick(HitMatrix, view, rayL, HitRayV, s);
+            m_hitRegion = m_translatorControl.Pick(vc, HitMatrix, view, rayL, HitRayV);
             
             bool picked = m_hitRegion != HitRegion.None;                      
             return picked;
@@ -64,10 +63,8 @@ namespace RenderingInterop
         public override void Render(ViewControl vc)
         {                                                
             Matrix4F normWorld = GetManipulatorMatrix();
-            if (normWorld == null) return;
-            float s;
-            Util.CalcAxisLengths(vc.Camera, normWorld.Translation, out s);
-            m_translatorControl.Render(normWorld, s);        
+            if (normWorld == null) return;            
+            m_translatorControl.Render(vc, normWorld);        
         }
 
         public override void OnBeginDrag()
@@ -157,15 +154,9 @@ namespace RenderingInterop
             bool hitAxis = m_hitRegion == HitRegion.XAxis
                 || m_hitRegion == HitRegion.YAxis
                 || m_hitRegion == HitRegion.ZAxis;
-
-
-            Matrix4F view = vc.Camera.ViewMatrix;
-            Matrix4F proj = vc.Camera.ProjectionMatrix;
-            Matrix4F vp = view * proj;
             
-            // create ray in world space.
-            Ray3F rayW = vc.GetRay(scrPt, vp);
-           
+            Matrix4F proj = vc.Camera.ProjectionMatrix;
+                      
             // create ray in view space.            
             Ray3F rayV = vc.GetRay(scrPt, proj);
             Vec3F translate = m_translatorControl.OnDragging(rayV);
@@ -174,7 +165,12 @@ namespace RenderingInterop
             bool snapToGeom = Control.ModifierKeys == m_snapGeometryKey;
 
             if (snapToGeom)
-            {               
+            {
+                Matrix4F view = vc.Camera.ViewMatrix;
+                Matrix4F vp = view * proj;
+                // create ray in world space.
+                Ray3F rayW = vc.GetRay(scrPt, vp);
+
                 Vec3F manipPos = HitMatrix.Translation;
                 Vec3F manipMove;
                 if (hitAxis)
@@ -367,6 +363,8 @@ namespace RenderingInterop
 
         [Import(AllowDefault=false)]
         private ISnapFilter m_snapFilter;
+
+        
         private TranslatorControl m_translatorControl;
         private HitRegion m_hitRegion = HitRegion.None;        
         private bool m_cancelDrag;

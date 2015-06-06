@@ -16,7 +16,7 @@ namespace GlobalRenderFlags
         WireFrame      = 1 << 4, // turn on/off wireframe rendering
         Shadows        = 1 << 5, // turn on/off shadow rendering
         RenderNormals  = 1 << 6, // turn on/off normals rendering.
-        Force32bit          = 0x7fffffff,
+        Force32bit          = 0xffffffffUL,
     };    
 }
 typedef enum GlobalRenderFlags::GlobalRenderFlags GlobalRenderFlagsEnum;
@@ -44,10 +44,11 @@ namespace BasicRendererFlags
     enum BasicRendererFlags 
     {
         None                = 0,
-        Solid               = 1 << 0,
+        Lit                 = 1 << 0,
         WireFrame           = 1 << 1,
         DisableDepthTest    = 1 << 2,
         DisableDepthWrite   = 1 << 3,
+        Foreground          = 1 << 4,   // foreground layer.
         Force32bit          = 0x7fffffff 
     };   
 }
@@ -114,6 +115,7 @@ namespace TextureType
         BlankMask,
         FullMask,
         Cubemap,
+        Unknown,
         MAX,     // always last
         MIN = DIFFUSE,
     };
@@ -152,8 +154,22 @@ namespace ResourceType
     {
         Unknown,
         Model,
-        Texture
+        Texture,
+        Material
     };
+
+    inline const wchar_t* ToWString(ResourceType restype)
+    {
+        switch(restype)
+        {
+        case Unknown : return L"Unknown";
+        case Model : return L"Model";
+        case Texture : return L"Texture";
+        case Material : return L"Material";
+        default: return L"";
+        }
+    }
+
 }
 typedef enum ResourceType::ResourceType ResourceTypeEnum;
 

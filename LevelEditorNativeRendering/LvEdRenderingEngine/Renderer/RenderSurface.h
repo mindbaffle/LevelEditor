@@ -3,7 +3,6 @@
 #pragma once
 
 #include <d3d11.h>
-#include <d3dx11.h>
 #include "../VectorMath/V3dMath.h"
 #include "../Core/Object.h"
 
@@ -34,13 +33,21 @@ public:
 
     ID3D11RenderTargetView* GetRenderTargetView() {return m_pRenderTargetView;}
     ID3D11DepthStencilView* GetDepthStencilView() {return m_pDepthStencilView;}
+    ID3D11DepthStencilView* GetDepthStencilViewFg() {return m_pDepthStencilViewFg;}
 
     void  SetBkgColor(const float4& color){ m_bkgColor = color;}
     const float4& GetBkgColor(){ return m_bkgColor;}
 	
     int GetWidth() {return m_width;}
     int GetHeight() {return m_height;}
-	float3 Unproject(const float3 &v, Matrix& invVP);
+    
+    // project v from 3d space to viewport space.
+    // if m is Proj then v is in view space.
+    // if m is View * Proj then v is in word space.
+    // if m is world * View * Proj then v is in local space.
+    float3 Project(const float3& v, const Matrix& m);
+
+	float3 Unproject(const float3 &v, const Matrix& invVP);
 
     virtual void Resize(int w, int h) = 0;	
     virtual SurfaceType GetType() = 0;
@@ -54,6 +61,7 @@ public:
 protected:
     ID3D11RenderTargetView* m_pRenderTargetView;    
     ID3D11DepthStencilView* m_pDepthStencilView;
+    ID3D11DepthStencilView* m_pDepthStencilViewFg;
 
     Texture* m_pDepthStencilBuffer;
     Texture* m_pColorBuffer;
@@ -65,7 +73,6 @@ protected:
 
 private:    
     float4 m_bkgColor;
-
 };
 
 }//namespace LvEdEngine

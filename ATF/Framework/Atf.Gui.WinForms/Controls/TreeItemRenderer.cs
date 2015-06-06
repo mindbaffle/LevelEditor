@@ -61,6 +61,26 @@ namespace Sce.Atf.Controls
             set { m_textBrush = value; }
         }
 
+
+        /// <summary>
+        /// Gets or sets the brush used for highlighting part of the element
+        /// that matches search pattern.</summary>
+        public Brush MatchedHighlightBrush
+        {
+            get { return m_matchedHighlightBrush; }
+            set { m_matchedHighlightBrush = value; }
+        }
+
+        /// <summary>
+        /// Gets or sets brush for background of elements that did not pass filter/// </summary>
+        public Brush NoMatchHighlightBrush
+        {
+            get { return m_noMatchHighlightBrush; }
+            set { m_noMatchHighlightBrush = value; }
+        }
+
+        //private SolidBrush m_brushMatchedHighLight = new SolidBrush(Color.FromArgb(239, 203, 5));
+        //private SolidBrush m_brushNonMatchedBg = new SolidBrush(Color.FromArgb(230, 230, 230));
         /// <summary>
         /// Gets or sets the pen for drawing the expander</summary>
         public Pen ExpanderPen
@@ -128,7 +148,7 @@ namespace Sce.Atf.Controls
         /// <param name="node">The tree node whose label is to be measured</param>
         /// <param name="g">The current GDI+ Graphics object</param>
         /// <returns>The width and height of a tight rectangle around the label in pixels. The
-        /// TreeControl provides the paddding in between items. Technically, the units of measure
+        /// TreeControl provides the padding in between items. Technically, the units of measure
         /// are specified by Graphics.PageUnit.</returns>
         public virtual Size MeasureLabel(TreeControl.Node node, Graphics g)
         {
@@ -174,20 +194,18 @@ namespace Sce.Atf.Controls
             
             Font font = GetDefaultFont(node, g);
 
-            if (!string.IsNullOrEmpty(FilteringPattern))
+            if (!string.IsNullOrEmpty(FilteringPattern) && node.Label != null)
             {
-                //                 bool matched = false;
                 int regularStart = 0;
                 int matchStart;
                 PointF textLoc = new PointF(textRect.X, textRect.Y);
 
                 do
                 {
-                    // highlight the backdground of matched text 
+                    // highlight the background of matched text 
                     matchStart = node.Label.IndexOf(FilteringPattern, regularStart, StringComparison.CurrentCultureIgnoreCase);
                     if (matchStart >= 0)
                     {
-                        //                        matched = true;
                         // non-matched substring 
                         string regularString = node.Label.Substring(regularStart, matchStart - regularStart);
                         SizeF regularSize = MeasureDisplayStringWidth(g, regularString, font);
@@ -202,7 +220,7 @@ namespace Sce.Atf.Controls
                         // offset a couple of pixels to avoid obvious overlap with preceding char
                         matchedRect.X += 2;
                         matchedRect.Width -= 2;
-                        g.FillRectangle(m_brushMatchedHighLight, matchedRect);
+                        g.FillRectangle(MatchedHighlightBrush, matchedRect);
                         textLoc.X += matchedSize.Width;
                     }
                 } while (matchStart >= 0);
@@ -215,9 +233,19 @@ namespace Sce.Atf.Controls
 
                 g.FillRectangle(highlightBrush, textRect);
                 textBrush = highlightTextBrush;
-            }
-
+            }            
             g.DrawString(node.Label, font, textBrush, textRect);
+        }
+
+        /// <summary>
+        /// Draws the data of a tree node at the specified location.</summary>
+        /// <param name="node">The tree control's node whose data is to be drawn</param>
+        /// <param name="g">The current GDI+ graphics object</param>
+        /// <param name="x">The x-coordinate of the upper-left corner of the node label</param>
+        /// <param name="y">The y-coordinate of the upper-left corner of the node label</param>
+        public virtual void DrawData(TreeControl.Node node, Graphics g, int x, int y)
+        {
+            
         }
 
         /// <summary>
@@ -228,12 +256,16 @@ namespace Sce.Atf.Controls
         /// <param name="y">The y-coordinate of the upper-left corner of the node</param>
         public virtual void DrawBackground(TreeControl.Node node, Graphics g, int x, int y)
         {
-            if (NeedGrayBackground(node))
+
+            if (FilteringStatus != null && !string.IsNullOrEmpty(FilteringPattern))
             {
-                Rectangle bgRect = new Rectangle(Owner.Margin.Left, Owner.Margin.Top + y,
+                if ((FilteringStatus(node) & NodeFilteringStatus.Visible) == 0)
+                {
+                    Rectangle bgRect = new Rectangle(Owner.Margin.Left, Owner.Margin.Top + y,
                     Owner.Width - Owner.Margin.Left - Owner.Margin.Right, node.LabelHeight + Owner.Margin.Top + Owner.Margin.Bottom);
-                bgRect.Y -= 3;
-                g.FillRectangle(m_brushNonMatchedBg, bgRect);
+                    bgRect.Y -= 3;
+                    g.FillRectangle(NoMatchHighlightBrush, bgRect);
+                }
             }
         }
 
@@ -262,13 +294,22 @@ namespace Sce.Atf.Controls
         /// <param name="y">The y-coordinate of the upper-left corner of the check box</param>
         public virtual void DrawCheckBox(TreeControl.Node node, Graphics g, int x, int y)
         {
-            ButtonState buttonState = ButtonState.Flat;
-            if (node.CheckState == CheckState.Checked)
-                buttonState |= ButtonState.Checked;
-            else if (node.CheckState == CheckState.Indeterminate)
-                buttonState |= ButtonState.Inactive;
             Rectangle bounds = new Rectangle(x, y, CheckBoxSize.Width, CheckBoxSize.Height);
-            ControlPaint.DrawCheckBox(g, bounds, buttonState);
+            if (node.CheckState == CheckState.Indeterminate)
+            {   // draw indeterminate state.                                               
+                var rect = Rectangle.Inflate(bounds,-1, -1);
+                g.FillRectangle(SystemBrushes.Window, rect);
+                var rect2 = Rectangle.Inflate(bounds,-4, -4);
+                g.FillRectangle(SystemBrushes.ControlText, rect2);
+                g.DrawRectangle(SystemPens.ControlDark, rect.X, rect.Y, rect.Width - 1, rect.Height - 1);                
+            }
+            else
+            {
+                var buttonState = ButtonState.Flat;
+                if (node.CheckState == CheckState.Checked)
+                    buttonState |= ButtonState.Checked;            
+                ControlPaint.DrawCheckBox(g, bounds, buttonState);
+            }            
         }
 
         /// <summary>
@@ -296,10 +337,42 @@ namespace Sce.Atf.Controls
         /// <param name="y">The y-coordinate of the upper-left corner of the expander icon</param>
         public virtual void DrawExpander(TreeControl.Node node, Graphics g, int x, int y)
         {
-            node.PartiallyExpanded = false; // reset            
-            GdiUtil.DrawExpander(x, y, ExpanderSize.Height, m_expanderPen, node.Expanded, g);
-        }
+            NodeFilteringStatus 
+                stat = FilteringStatus != null
+                ? FilteringStatus(node) : NodeFilteringStatus.Normal;
 
+            bool partial = (stat & NodeFilteringStatus.PartiallyExpanded) == NodeFilteringStatus.PartiallyExpanded;
+            bool hasChildMatch = (stat & NodeFilteringStatus.ChildVisible) == NodeFilteringStatus.ChildVisible;
+            Brush bkg = null;
+            Pen frg = null;
+            if (node.Expanded)
+            {
+                if (partial)
+                {
+                    bkg = NoMatchHighlightBrush;
+                }
+                else
+                {
+                    m_tmp.Color = m_expanderPen.Color;
+                    bkg = m_tmp;
+                }
+
+            }
+            else
+            {
+                if (hasChildMatch)
+                    bkg = m_matchedHighlightBrush;
+                else
+                    frg = m_expanderPen;
+            }
+
+            node.PartiallyExpanded = false; // reset            
+            GdiUtil.DrawExpander(g, x, y, ExpanderSize.Height, node.Expanded, bkg, frg);
+
+            //node.PartiallyExpanded = false; // reset            
+            //GdiUtil.DrawExpander(x, y, ExpanderSize.Height, m_expanderPen, node.Expanded, g);
+        }
+        private SolidBrush m_tmp = new SolidBrush(Color.Black);
 
         /// <summary>
         /// Draws the category expander icon for the Microsoft Office-like categorized palette</summary>
@@ -403,15 +476,7 @@ namespace Sce.Atf.Controls
             return font;
         }
 
-        // return false if the node itself, or any of its chilldren label matches the searching pattern
-        private bool NeedGrayBackground(TreeControl.Node node)
-        {
-            if (string.IsNullOrEmpty(FilteringPattern))
-                return false;
-
-            return FilteringStatus == null || (FilteringStatus(node) & NodeFilteringStatus.Visible) == 0;
-        }
-
+       
         private Control m_owner;
         private readonly Dictionary<int, Font> m_fonts = new Dictionary<int, Font>();
         private Size m_checkBoxSize = new Size(16, 16);
@@ -426,9 +491,8 @@ namespace Sce.Atf.Controls
         private Pen m_expanderPen = SystemPens.ControlDarkDark;
         private Pen m_hierarchyLinePen = SystemPens.InactiveBorder;
 
-        private SolidBrush m_brushMatchedHighLight = new SolidBrush(Color.FromArgb(239, 203, 5));
-        private SolidBrush m_brushNonMatchedBg = new SolidBrush(Color.FromArgb(230, 230, 230));
-        private SolidBrush m_brushPartialExpander = new SolidBrush(Color.FromArgb(180, 180, 180));
+        private Brush m_matchedHighlightBrush = new SolidBrush(Color.FromArgb(239, 203, 5));
+        private Brush m_noMatchHighlightBrush = new SolidBrush(Color.FromArgb(230, 230, 230));
 
         private Color m_categoryStartColor = Color.FromArgb(0, 0, 0, 0);
         private Color m_categoryEndColor = Color.FromArgb(0, 0, 0, 0);
@@ -443,7 +507,7 @@ namespace Sce.Atf.Controls
         /// Constructor</summary>
         public ChristmasTreeRenderer()
         {
-            //ExpanderSize = new Size(16,32); //huge! drammatic!
+            //ExpanderSize = new Size(16,32); //huge! dramatic!
             ExpanderSize = new Size(16, 8); //wide and short
             CheckBoxSize = new Size(40, 32);
         }
@@ -452,7 +516,7 @@ namespace Sce.Atf.Controls
         /// <param name="node">The tree node whose label is to be measured</param>
         /// <param name="g">The current GDI+ Graphics object</param>
         /// <returns>The width and height of a tight rectangle around the label in pixels. The
-        /// TreeControl provides the paddding in between items. Technically, the units of measure
+        /// TreeControl provides the padding in between items. Technically, the units of measure
         /// are specified by Graphics.PageUnit.</returns>
         public override Size MeasureLabel(TreeControl.Node node, Graphics g)
         {

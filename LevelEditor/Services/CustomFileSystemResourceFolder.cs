@@ -11,8 +11,77 @@ using LevelEditorCore;
 
 namespace LevelEditor
 {
-    public class CustomFileSystemResourceFolder : IFileSystemResourceFolder
+    public class CustomFileSystemResourceFolder : IFileSystemResourceFolder, IEquatable<CustomFileSystemResourceFolder>
+        , IComparable<CustomFileSystemResourceFolder>
     {
+        /// <summary>
+        /// Compares this to other.</summary>        
+        public int CompareTo(CustomFileSystemResourceFolder other)
+        {
+            return FullPath.CompareTo(other.FullPath);
+        }
+
+        /// <summary>
+        /// Tests for equality</summary>
+        /// <param name="other">Other path</param>
+        /// <returns>True iff this path is equivalent to other</returns>
+        public bool Equals(CustomFileSystemResourceFolder other)
+        {
+            if (other == null) return false;
+            return FullPath == other.FullPath;
+        }
+
+        /// <summary>
+        /// Tests object for equality</summary>
+        /// <param name="obj">Other object</param>
+        /// <returns>True iff this path is equivalent to other object</returns>
+        public override bool Equals(Object obj)
+        {
+            if (obj == null) return false;
+
+            CustomFileSystemResourceFolder other = obj as CustomFileSystemResourceFolder;
+            if (other == null) return false;
+            return Equals(other);
+        }
+
+
+
+        /// <summary>
+        /// Tests  for equality</summary>
+        /// <param name="a">First path</param>
+        /// <param name="b">Second path</param>
+        /// <returns>True iff paths are equivalent</returns>
+        public static bool operator ==(CustomFileSystemResourceFolder a, CustomFileSystemResourceFolder b)
+        {
+            if ((object)a == null || ((object)b) == null)
+                return Object.Equals(a, b);
+            return a.Equals(b);
+        }
+
+        /// <summary>
+        /// Tests paths for inequality</summary>
+        /// <param name="a">First path</param>
+        /// <param name="b">Second path</param>
+        /// <returns>True iff paths are not equivalent</returns>
+        public static bool operator !=(CustomFileSystemResourceFolder a, CustomFileSystemResourceFolder b)
+        {
+            if (a == null || b == null)
+                return !Object.Equals(a, b);
+
+            return !(a.Equals(b));
+        }
+
+
+
+        /// <summary>
+        /// Obtains hash code</summary>
+        /// <returns>Hash code</returns>
+        public override int GetHashCode()
+        {
+            return FullPath.GetHashCode();            
+        }
+
+
         /// <summary>
         /// Constructor</summary>
         /// <param name="path">Absolute path of the directory</param>
@@ -23,10 +92,14 @@ namespace LevelEditor
 
         private CustomFileSystemResourceFolder(string path, IResourceFolder parent)
         {
+            if (string.IsNullOrWhiteSpace(path))
+                throw new ArgumentNullException("path");
+
             m_path = path;
             m_parent = parent;
             m_name = PathUtil.GetLastElement(path);
         }
+
 
         #region IResourceFolder Members
 
@@ -37,28 +110,20 @@ namespace LevelEditor
         {
             get
             {
-                string[] directories = null;
-
-                try
-                {
-                    // This can throw!
-                    directories = Directory.GetDirectories(m_path);
+                var folders = new List<IResourceFolder>();               
+                try 
+                { 
+                    var directories = Directory.GetDirectories(m_path);
+                    const FileAttributes systemOrHidden = FileAttributes.System | FileAttributes.Hidden;
+                    foreach (string directory in directories)
+                    {
+                        DirectoryInfo dirInfo = new DirectoryInfo(directory);
+                        if ((dirInfo.Attributes & systemOrHidden) != 0)
+                            continue;
+                        folders.Add(new CustomFileSystemResourceFolder(directory, this));
+                    }
                 }
-                catch (UnauthorizedAccessException) {}
-                catch (ArgumentNullException) {}
-                catch (ArgumentException) {}
-                catch (PathTooLongException) {}
-                catch (DirectoryNotFoundException) {}
-                catch (IOException) {}
-                finally
-                {
-                    if (directories == null)
-                        directories = new string[0];
-                }
-
-                List<IResourceFolder> folders = new List<IResourceFolder>(directories.Length);
-                foreach (string directory in directories)
-                    folders.Add(new CustomFileSystemResourceFolder(directory, this));
+                catch { }
                 return new ReadOnlyCollection<IResourceFolder>(folders);
             }
         }
@@ -69,54 +134,27 @@ namespace LevelEditor
         public IList<Uri> ResourceUris
         {
             get
-            {
-                string[] files = null;
-
-                try
+            {                
+                var uris = new List<Uri>();
+                try 
                 {
-                    // This can throw!
-                    files = Directory.GetFiles(m_path);
-                }
-                catch (UnauthorizedAccessException) { }
-                catch (ArgumentNullException) { }
-                catch (ArgumentException) { }
-                catch (PathTooLongException) { }
-                catch (DirectoryNotFoundException) { }
-                catch (IOException) { }
-                finally
-                {
-                    if (files == null)
-                        files = new string[0];
-                }
+                    var systemOrHidden = FileAttributes.System | FileAttributes.Hidden;                    
+                    var gameEngine = Globals.MEFContainer.GetExportedValue<IGameEngineProxy>();
+                    var resInfos = gameEngine != null ? gameEngine.Info.ResourceInfos : null; 
 
-
-                IResourceMetadataService resService
-                    = Globals.MEFContainer.GetExportedValue<IResourceMetadataService>();
-                IEnumerable<string> metaExts = resService != null ? resService.MetadataFileExtensions
-                    : EmptyEnumerable<string>.Instance;
-
-                List<Uri> uris = new List<Uri>(files.Length);
-                foreach (string file in files)
-                {
-                    // skip over metadata and thumbnais.
-                    string ext = System.IO.Path.GetExtension(file);
-                    string fileName = System.IO.Path.GetFileName(file);
-                    bool skip = fileName.StartsWith("~") || string.IsNullOrWhiteSpace(ext);
-                    if(!skip)
-                    {
-                        foreach(string metaExt in metaExts)
-                        {
-                            if (ext.Equals(metaExt, StringComparison.InvariantCultureIgnoreCase))
-                            {
-                                skip = true;
-                                break;
-                            }
-                        }
+                    var files = Directory.GetFiles(m_path);
+                    foreach (string file in files)
+                    {                        
+                        FileInfo finfo = new FileInfo(file);                        
+                        if ( (finfo.Attributes & systemOrHidden) != 0
+                            || finfo.Name.StartsWith("~"))
+                            continue;
+                        string ext = finfo.Extension.ToLower();
+                        if (resInfos == null || resInfos.IsSupported(ext))
+                            uris.Add(new Uri(file));                        
                     }
-                    if(skip) continue;
-
-                    uris.Add(new Uri(file));
-                }                                           
+                }
+                catch { }                           
                 return new ReadOnlyCollection<Uri>(uris);
             }
         }
@@ -164,6 +202,6 @@ namespace LevelEditor
 
         private string m_name;
         private readonly string m_path;
-        private readonly IResourceFolder m_parent;
+        private readonly IResourceFolder m_parent;        
     }
 }

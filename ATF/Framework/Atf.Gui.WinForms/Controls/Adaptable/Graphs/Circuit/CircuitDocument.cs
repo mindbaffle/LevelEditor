@@ -14,11 +14,6 @@ namespace Sce.Atf.Controls.Adaptable.Graphs
     /// ControlInfo instance used to register the viewing control in the UI</summary>
     public abstract class CircuitDocument : DomDocument
     {
-        // required  child info
-        /// <summary>
-        /// Gets ChildInfo for sub-circuit object</summary>
-        protected abstract ChildInfo SubCircuitChildInfo { get; }
-      
         /// <summary>
         /// Performs initialization when the adapter is connected to the circuit's DomNode.
         /// Raises the DomNodeAdapter NodeSet event and performs custom processing.</summary>
@@ -27,7 +22,11 @@ namespace Sce.Atf.Controls.Adaptable.Graphs
             var documentClientInfo = DomNode.Type.GetTag<DocumentClientInfo>();
             if (documentClientInfo != null)
                 SetEditorFileType(documentClientInfo.FileType);
-            m_subCircuits = new DomNodeListAdapter<SubCircuit>(DomNode, SubCircuitChildInfo);
+            
+            #pragma warning disable 618 //mastered sub-circuits are obsolete
+            if (SubCircuitChildInfo != null)
+                m_subCircuits = new DomNodeListAdapter<SubCircuit>(DomNode, SubCircuitChildInfo);
+            #pragma warning restore 618
 
             base.OnNodeSet();
         }
@@ -41,10 +40,23 @@ namespace Sce.Atf.Controls.Adaptable.Graphs
         }
 
         /// <summary>
-        /// Gets the circuit's sub-circuits</summary>
-        public IList<SubCircuit> SubCircuits
+        /// Gets the optional AttributeInfo for the document version
+        /// pins should be displayed.</summary>
+        protected virtual AttributeInfo VersionAttribute 
         {
-            get { return m_subCircuits; }
+            get { return null; }
+        }
+
+        ///<summary>Gets the version of the tool that generated the document</summary>
+        public Version Version
+        {
+            get
+            {
+                if (VersionAttribute == null)
+                    return new Version(1, 0); // default version
+                var versionValue = DomNode.GetAttribute(VersionAttribute) as string;
+                return new Version(versionValue);
+            }
         }
 
         /// <summary>
@@ -62,7 +74,6 @@ namespace Sce.Atf.Controls.Adaptable.Graphs
         {
             m_editorFileType = fileType;
         }
-
 
         /// <summary>
         /// Raises the DirtyChanged event and performs custom processing</summary>
@@ -84,6 +95,20 @@ namespace Sce.Atf.Controls.Adaptable.Graphs
             base.OnUriChanged(e);
         }
 
+        /// <summary>
+        /// This property is obsolete as of ATF 3.9. It will be marked with the ObsoleteAttribute
+        /// for ATF 3.10 and then later removed.</summary>
+        //[Obsolete("Circuit groups and circuit templates have replaced mastered circuits")]
+        protected virtual ChildInfo SubCircuitChildInfo { get { return null; } }
+
+        /// <summary>
+        /// Gets the circuit's sub-circuits</summary>
+        [Obsolete("Circuit groups and circuit templates have replaced mastered circuits")]
+        public IList<SubCircuit> SubCircuits
+        {
+            get { return m_subCircuits; }
+        }
+
         private void UpdateControlInfo()
         {
             string filePath = Uri.LocalPath;
@@ -98,10 +123,11 @@ namespace Sce.Atf.Controls.Adaptable.Graphs
             }
         }
 
-        private string m_editorFileType;
- 
+        #pragma warning disable 618 //mastered sub-circuits are obsolete
+        private IList<SubCircuit> m_subCircuits;
+        #pragma warning restore 618
 
-        private DomNodeListAdapter<SubCircuit> m_subCircuits;
+        private string m_editorFileType;
         private ControlInfo m_controlInfo;
     }
 }

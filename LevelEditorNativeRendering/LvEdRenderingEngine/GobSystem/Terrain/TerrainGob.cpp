@@ -7,14 +7,13 @@
 #include "../../Core/StringUtils.h"
 #include "../../Core/ImageData.h"
 #include "../../VectorMath/MeshUtil.h"
-#include "../../DirectX/XNAMath/xnamath.h"
 #include "../../Renderer/Texture.h"
 #include "../../Renderer/ShaderLib.h"
-#include "../../Renderer/RenderUtil.h"
 #include "../../Renderer/TerrainShader.h"
 #include "../../Renderer/RenderBuffer.h"
 #include "../../Renderer/LineRenderer.h"
 #include "../../VectorMath/CollisionPrimitives.h"
+#include "../../Renderer/GpuResourceFactory.h"
 
 namespace LvEdEngine
 {
@@ -33,8 +32,7 @@ TerrainGob::TerrainGob() :  m_hn(NULL),
                             m_patchDim(65),                         
                             m_heightMap(NULL)
 {
-    // create shared vertex buffer.
-    auto device = RenderContext::Inst()->Device();
+    // create shared vertex buffer.    
     std::vector<float3> pos;
     for(int32_t z = 0; z < m_patchDim; z++)
     {
@@ -43,9 +41,8 @@ TerrainGob::TerrainGob() :  m_hn(NULL),
             pos.push_back(float3((float)x,0,(float)z));
         }
     }
-    m_sharedVB = CreateVertexBuffer(device, VertexFormat::VF_P, &pos[0], (int32_t)pos.size());
+    m_sharedVB = GpuResourceFactory::CreateVertexBuffer(&pos[0],VertexFormat::VF_P, (int32_t)pos.size());
     m_sharedVB->SetDebugName("TerrainPatch shared vertex buffer");
-
 
 
     // create index buffer.
@@ -54,10 +51,9 @@ TerrainGob::TerrainGob() :  m_hn(NULL),
     // |   \    |
     // |     \  |
     // C--------D
-    // each cell has two tri  ABC and CBD
+    // each cell has two tri  ACD and ADB
 
-    // create one set of indices used by all the meshes.
-    // todo allow mesh class to share indices.
+       
     int32_t patchDim = m_patchDim;
     int32_t patchCell = m_patchDim - 1;    
     int32_t numPatchIndices =   patchCell * patchCell * 6;
@@ -77,7 +73,7 @@ TerrainGob::TerrainGob() :  m_hn(NULL),
             m_indices[k++] = zc * patchDim + xc + 1;        // B
         }
     }    
-    m_sharedIB = CreateIndexBuffer(device, &m_indices[0], (uint32_t)(m_indices.size()) );
+    m_sharedIB = GpuResourceFactory::CreateIndexBuffer(&m_indices[0], (uint32_t)m_indices.size());
     m_sharedIB->SetDebugName("TerrainPatch shared index buffer");
 
     // only init one time.
@@ -390,9 +386,11 @@ float TerrainGob::GetHeightAt(float u, float v) const
 
 // virtual
 
-void TerrainGob::Update(float dt)
-{
-    UpdateWorldTransform();
+void TerrainGob::Update(const FrameTime& fr, UpdateTypeEnum updateType)
+{    
+    bool boundDirty = m_boundsDirty;
+    super::Update(fr,updateType);
+    m_boundsDirty = boundDirty || m_worldBoundUpdated;
     if(m_boundsDirty)    
     {                
         if(m_renderableNodes.size() > 0)
@@ -484,8 +482,7 @@ void TerrainGob::RemoveLayerMap(LayerMap* map)
 }
 
 void TerrainGob::AddDecorationMap(DecorationMap* map, int index)
-{
-    
+{    
     if(map)
     {
         if(index == -1)

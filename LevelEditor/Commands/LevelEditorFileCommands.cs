@@ -6,7 +6,7 @@ using System.Windows.Forms;
 
 using Sce.Atf;
 using Sce.Atf.Applications;
-
+using Sce.Atf.Adaptation;
 using LevelEditorCore;
 
 namespace LevelEditor.Commands
@@ -37,7 +37,17 @@ namespace LevelEditor.Commands
             RegisterCommands = (RegisterCommands & ~(CommandRegister.FileSaveAll | CommandRegister.FileClose));
         }
 
+        protected override void Initialize()
+        {
+            base.Initialize();
 
+            m_gameDocumentRegistry.DocumentDirtyChanged
+                += (sender, e) => CommandInfo.FileSave.OnCheckCanDo(this);
+
+            m_gameDocumentRegistry.EditableResourceOwnerDirtyChanged
+                += (sender, e) => CommandInfo.FileSave.OnCheckCanDo(this);
+
+        }
         /// <summary>
         /// Saves the document under its current name</summary>
         /// <param name="document">Document to save</param>
@@ -56,7 +66,8 @@ namespace LevelEditor.Commands
             if (IsUntitled(document))
                 return SaveAs(document);
 
-            if (!gameDcument.AnyDirty)
+            if (!m_gameDocumentRegistry.AnyDocumentDirty
+                && !m_gameDocumentRegistry.AnyEditableResourceOwnerDirty)
                 return true;           
 
             return SafeSave(document, DocumentEventType.Saved);
@@ -64,13 +75,13 @@ namespace LevelEditor.Commands
 
         protected override bool ConfirmClose(IDocument document)
         {
-
             GameDocument gameDcument = document as GameDocument;
             if (gameDcument == null)
                 return base.ConfirmClose(document);
           
             bool closeConfirmed = true;
-            if (gameDcument.AnyDirty)
+            if (m_gameDocumentRegistry.AnyDocumentDirty
+                || m_gameDocumentRegistry.AnyEditableResourceOwnerDirty)
             {
                 string message = "One or more level and/or external resource is dirty"
                     + Environment.NewLine + "Save Changes?";
@@ -97,14 +108,14 @@ namespace LevelEditor.Commands
             bool result = base.CanDoCommand(commandTag);
             if (result == false && StandardCommand.FileSave.Equals(commandTag))
             {
-                // external resources.
-                foreach (var obj in Util.FindAll<IEditableResourceOwner>())
-                {
-                    result = obj.Dirty;
-                    if (result) break;
-                }   
+                result = m_gameDocumentRegistry.AnyDocumentDirty
+                    || m_gameDocumentRegistry.AnyEditableResourceOwnerDirty;
             }
+
             return result;
-        }        
+        }
+
+        [Import(AllowDefault = false)]
+        private IGameDocumentRegistry m_gameDocumentRegistry = null;
     }
 }

@@ -1,7 +1,6 @@
 //Copyright © 2014 Sony Computer Entertainment America LLC. See License.txt.
 
 #pragma once
-#include <D3DX11.h>
 #include <D3D11.h>
 #include "../VectorMath/V3dMath.h"
 #include "../VectorMath/CollisionPrimitives.h"
@@ -18,8 +17,7 @@ typedef std::hash_set<ObjectGUID> Selection;
 namespace LvEdEngine
 {
     class RenderState;
-    class RenderStateCache;
-
+    
      class RenderContext : public NonCopyable
      {
      public:
@@ -30,8 +28,7 @@ namespace LvEdEngine
         
         // Getting Context State
         ID3D11Device* Device() const {return m_device;}
-        ID3D11DeviceContext* Context() const {return m_context;}
-        RenderStateCache* GetRenderStateCache(){ return m_rsCache;}
+        ID3D11DeviceContext* Context() const {return m_context;}        
         RenderState* State() const {return m_currentState; }
         Camera& Cam()  {return m_cam;}
         
@@ -51,8 +48,7 @@ namespace LvEdEngine
         ~RenderContext();
         Camera m_cam;
         ID3D11Device* m_device;
-        ID3D11DeviceContext* m_context;
-        RenderStateCache* m_rsCache;
+        ID3D11DeviceContext* m_context;        
         float4 m_viewPort;
         ExpFog  m_fog;
         RenderState* m_currentState;

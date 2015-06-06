@@ -6,13 +6,11 @@ using System.ComponentModel.Composition;
 using System.Windows.Forms;
 using System.Drawing;
 
-
 using Sce.Atf;
 using Sce.Atf.Adaptation;
 using Sce.Atf.Applications;
 using Sce.Atf.Dom;
 using Sce.Atf.VectorMath;
-
 
 using LevelEditorCore;
 using Camera = Sce.Atf.Rendering.Camera;
@@ -41,23 +39,34 @@ namespace RenderingInterop
                 return false;
 
             Camera camera = vc.Camera;
-            float rad;
-            Util.CalcAxisLengths(camera, HitMatrix.Translation, out rad);
-            float tolerance = rad / 10.0f;
+            float RingDiameter = 2 * AxisLength;
+            float s = Util.CalcAxisScale(vc.Camera, HitMatrix.Translation, RingDiameter, vc.Height);
 
+            float rad = s * Util3D.RingCenterRadias;
+            float lrad = rad * LookRingScale;
+            float tolerance = s * Util3D.RingThickness;
+            
+            Matrix4F billboard
+                = Util.CreateBillboard(HitMatrix.Translation, vc.Camera.WorldEye, vc.Camera.Up, vc.Camera.LookAt);
+            m_lookAxisHitMtrx = billboard;
             // compute ray in object space  space.
             Matrix4F vp = camera.ViewMatrix * camera.ProjectionMatrix;
             Matrix4F wvp = HitMatrix * vp;            
             Ray3F rayL = vc.GetRay(scrPt, wvp);
 
+            Matrix4F wvp2 = billboard * vp;
+            Ray3F rayL2 = vc.GetRay(scrPt, wvp2);
+
             Plane3F xplane = new Plane3F(Vec3F.XAxis, Vec3F.ZeroVector);
             Plane3F yplane = new Plane3F(Vec3F.YAxis,Vec3F.ZeroVector);
-            Plane3F zplane = new Plane3F(Vec3F.ZAxis,Vec3F.ZeroVector);
+            Plane3F zplane = new Plane3F(Vec3F.ZAxis, Vec3F.ZeroVector);
+            
 
             Vec3F pt;
-            float xdelta = float.MaxValue;            
-            float ydelta = float.MaxValue;
-            float zdelta = float.MaxValue;
+            float xdelta    = float.MaxValue;            
+            float ydelta    = float.MaxValue;
+            float zdelta    = float.MaxValue;
+            float lookdelta = float.MaxValue;
             if(rayL.IntersectPlane(xplane,out pt))
             {
                 xdelta = Math.Abs(pt.Length - rad); 
@@ -73,17 +82,28 @@ namespace RenderingInterop
                 zdelta = Math.Abs(pt.Length - rad);
             }
 
-            if(xdelta < tolerance && xdelta < ydelta && xdelta < zdelta)
+            if (rayL2.IntersectPlane(zplane, out pt))
+            {
+                lookdelta = Math.Abs(pt.Length - lrad);
+            }
+
+            if(xdelta < tolerance && xdelta < ydelta && xdelta < zdelta
+                && xdelta < lookdelta)
             {
                 m_hitRegion = HitRegion.XAxis;                
             }
-            else if(ydelta < tolerance && ydelta < zdelta)
+            else if(ydelta < tolerance && ydelta < zdelta
+                && ydelta < lookdelta)
             {
                 m_hitRegion = HitRegion.YAxis;
             }
-            else if(zdelta < tolerance)
+            else if(zdelta < tolerance && zdelta < lookdelta)
             {
                 m_hitRegion = HitRegion.ZAxis;
+            }
+            else if (lookdelta < tolerance)
+            {
+                m_hitRegion = HitRegion.LookAxis;
             }
 
             return m_hitRegion != HitRegion.None;
@@ -94,30 +114,35 @@ namespace RenderingInterop
         {                                                                           
             Matrix4F normWorld = GetManipulatorMatrix();
             if (normWorld == null) return;
+            float RingDiameter = 2 * AxisLength;
+            Color xcolor = (m_hitRegion == HitRegion.XAxis) ? Color.Gold : XAxisColor;
+            Color ycolor = (m_hitRegion == HitRegion.YAxis ) ? Color.Gold : YAxisColor;
+            Color Zcolor = (m_hitRegion == HitRegion.ZAxis ) ? Color.Gold : ZAxisColor;
+            Color lColor = (m_hitRegion == HitRegion.LookAxis) ? Color.Gold : Color.Cyan;
 
-            Util3D.RenderFlag = BasicRendererFlags.WireFrame | BasicRendererFlags.DisableDepthTest;
-            Color xcolor = (m_hitRegion == HitRegion.XAxis ) ? Color.LightSalmon : Color.Red;
-            Color ycolor = (m_hitRegion == HitRegion.YAxis ) ? Color.LightGreen : Color.Green;
-            Color Zcolor = (m_hitRegion == HitRegion.ZAxis ) ? Color.LightBlue : Color.Blue;
-
-            float s;
-            Util.CalcAxisLengths(vc.Camera, normWorld.Translation, out s);
+            float s = Util.CalcAxisScale(vc.Camera, normWorld.Translation, RingDiameter, vc.Height);
             Vec3F axScale = new Vec3F(s, s, s);
 
+            Matrix4F rot = new Matrix4F();
             Matrix4F scale = new Matrix4F();
             scale.Scale(axScale);
-            Matrix4F xform = scale*normWorld;
-            Util3D.DrawCircle(xform, Zcolor);
+            rot.RotX(MathHelper.PiOver2);            
+            Matrix4F xform = scale * rot * normWorld;
+            Util3D.DrawRing(xform, Zcolor);
 
-            Matrix4F rot = new Matrix4F();
-            rot.RotY(MathHelper.PiOver2);
+            rot.RotZ(-MathHelper.PiOver2);
             xform = scale * rot * normWorld;
-            Util3D.DrawCircle(xform, xcolor);
+            Util3D.DrawRing(xform, xcolor);
+            
+            xform = scale * normWorld;
+            Util3D.DrawRing(xform, ycolor);
 
+            Matrix4F billboard
+                = Util.CreateBillboard(normWorld.Translation, vc.Camera.WorldEye, vc.Camera.Up, vc.Camera.LookAt);
             rot.RotX(MathHelper.PiOver2);
-            xform = scale * rot * normWorld;
-            Util3D.DrawCircle(xform,ycolor);
-
+            scale.Scale(s * LookRingScale);
+            xform = scale * rot * billboard;
+            Util3D.DrawRing(xform, lColor);
         }
 
         public override void OnBeginDrag()
@@ -149,8 +174,7 @@ namespace RenderingInterop
                 if (notifier != null) notifier.OnBeginDrag();
             }
 
-            m_rotations = new Matrix4F[NodeList.Count];
-
+            m_rotations = new Matrix4F[NodeList.Count];            
             for (int k = 0; k < NodeList.Count; k++)
             {
                 ITransformable node = NodeList[k];                
@@ -171,42 +195,51 @@ namespace RenderingInterop
             Camera cam = vc.Camera;
 
             Matrix4F view = cam.ViewMatrix;
-            Matrix4F mtrx = cam.ProjectionMatrix;
+            Matrix4F proj = cam.ProjectionMatrix;
 
             Matrix4F axisMtrx = HitMatrix * view;
             Ray3F hitRay = HitRayV;
-            Ray3F dragRay = vc.GetRay(scrPt, mtrx);
+            Ray3F dragRay = vc.GetRay(scrPt, proj);
             
             Vec3F xAxis = axisMtrx.XAxis;
             Vec3F yAxis = axisMtrx.YAxis;
             Vec3F zAxis = axisMtrx.ZAxis;
             Vec3F origin = axisMtrx.Translation;
             
-            Vec3F rotAxis = new Vec3F();
+            Vec3F rotAxis = new Vec3F();            
             float theta = 0;
-            
+
+            float snapAngle = ((ISnapSettings)DesignView).SnapAngle;
             switch (m_hitRegion)
             {                
                 case HitRegion.XAxis:
                     {
                         Plane3F xplane = new Plane3F(xAxis, origin);
-                        theta = CalcAngle(origin, xplane, hitRay, dragRay);
-                        rotAxis = HitMatrix.XAxis;                     
+                        theta = CalcAngle(origin, xplane, hitRay, dragRay, snapAngle);
+                        rotAxis = HitMatrix.XAxis;                        
                     }
                     break;
                 case HitRegion.YAxis:
                     {
                         Plane3F yplane = new Plane3F(yAxis, origin);
-                        theta = CalcAngle(origin, yplane, hitRay, dragRay);
-                        rotAxis = HitMatrix.YAxis;
-
+                        theta = CalcAngle(origin, yplane, hitRay, dragRay, snapAngle);
+                        rotAxis = HitMatrix.YAxis;                        
                     }
                     break;
                 case HitRegion.ZAxis:
                     {
                         Plane3F zplane = new Plane3F(zAxis, origin);
-                        theta = CalcAngle(origin, zplane, hitRay, dragRay);
+                        theta = CalcAngle(origin, zplane, hitRay, dragRay, snapAngle);
                         rotAxis = HitMatrix.ZAxis;
+                    }
+                    break;
+                case HitRegion.LookAxis:
+                    {                        
+                        // for billboard objects the look vector is object's negative position in viewspace.
+                        Vec3F lookAxis = Vec3F.Normalize(-origin);
+                        Plane3F plane = new Plane3F(lookAxis, origin);
+                        theta = CalcAngle(origin, plane, hitRay, dragRay, snapAngle);                        
+                        rotAxis = m_lookAxisHitMtrx.ZAxis;
                     }
                     break;
                 default:
@@ -215,17 +248,16 @@ namespace RenderingInterop
 
             AngleAxisF axf = new AngleAxisF(-theta, rotAxis);
             Matrix4F deltaMtrx = new Matrix4F(axf);                                   
-            Matrix4F rotMtrx = new Matrix4F();            
+            Matrix4F rotMtrx = new Matrix4F();
+           
             for (int i = 0; i < NodeList.Count; i++)
             {                                
-                ITransformable node = NodeList[i];                
-                rotMtrx.Set(m_rotations[i]);
-                rotMtrx.Mul(rotMtrx, deltaMtrx);                
+                ITransformable node = NodeList[i];                              
+                rotMtrx.Mul(m_rotations[i], deltaMtrx);                
                 float ax, ay, az;
-                rotMtrx.GetEulerAngles(out ax, out ay, out az);                
-                node.Rotation = new Vec3F(ax,ay,az);
+                rotMtrx.GetEulerAngles(out ax, out ay, out az);                                
+                node.Rotation = new Vec3F(ax, ay, az);      
             }
-
         }
 
         public override void OnEndDrag(ViewControl vc, Point scrPt)
@@ -258,7 +290,7 @@ namespace RenderingInterop
             m_rotations = null;
         }
         
-        private static float CalcAngle(Vec3F origin, Plane3F plane, Ray3F ray0, Ray3F ray1)
+        private static float CalcAngle(Vec3F origin, Plane3F plane, Ray3F ray0, Ray3F ray1, float snapAngle)
         {
             float theta = 0;            
             Vec3F p0;
@@ -269,40 +301,41 @@ namespace RenderingInterop
             {
                 Vec3F v0 = Vec3F.Normalize(p0 - origin);
                 Vec3F v1 = Vec3F.Normalize(p1 - origin);
-                theta = CalcAngle(v0, v1, plane.Normal, 0);
+                theta = CalcAngle(v0, v1, plane.Normal, snapAngle);
             }
             return theta;
         }
 
         private static float CalcAngle(Vec3F v0, Vec3F v1, Vec3F axis, float snapAngle)
         {
+            const float twoPi = (float)(2.0 * Math.PI);
             float angle = Vec3F.Dot(v0, v1);
             if (angle > 1.0f)
                 angle = 1.0f;
-            else if (angle < -1.0f)
+            else if (angle <= -1.0f)
                 angle = 1.0f;
             angle = (float)Math.Acos(angle);
 
             // Check if v0 is left of v1
             Vec3F cross = Vec3F.Cross(v0, v1);
             if (Vec3F.Dot(cross, axis) < 0)
-                angle = -angle;
-
+                angle = twoPi - angle;
             // round to nearest multiple of preference
             if (snapAngle > 0)
             {
                 if (angle >= 0)
                 {
-                    int n = (int)((angle + snapAngle * 0.5) / snapAngle);
+                    int n = (int)((angle + snapAngle * 0.5f) / snapAngle);
                     angle = n * snapAngle;
                 }
                 else
                 {
-                    int n = (int)((angle - snapAngle * 0.5) / snapAngle);
+                    int n = (int)((angle - snapAngle * 0.5f) / snapAngle);
                     angle = n * snapAngle;
                 }
-            }
-
+            }            
+           // const float epsilone = (float)1e-7;
+           // if (twoPi - angle <= epsilone) angle = 0.0f;          
             return angle;
         }
 
@@ -313,10 +346,10 @@ namespace RenderingInterop
             if (node == null ) return null;
             
             Path<DomNode> path = new Path<DomNode>(node.Cast<DomNode>().GetPath());
-            Matrix4F parent = TransformUtils.CalcPathTransform(path, path.Count - 1);
+            Matrix4F localToWorld = TransformUtils.CalcPathTransform(path, path.Count - 1);
 
             // local transform
-            Matrix4F toworld = new Matrix4F(parent);
+            Matrix4F toworld = new Matrix4F(localToWorld);
 
             // Offset by rotate pivot
             Matrix4F P = new Matrix4F();
@@ -329,6 +362,12 @@ namespace RenderingInterop
             return toworld;
         }
 
+
+        // scale up the ring around view vector so to 
+        // separated from main axis rings.        
+        private const float LookRingScale = 1.25f;
+        
+        private Matrix4F m_lookAxisHitMtrx = new Matrix4F();
         private HitRegion m_hitRegion = HitRegion.None;        
         private Matrix4F[] m_rotations;        
         private enum HitRegion
@@ -336,7 +375,8 @@ namespace RenderingInterop
             None,
             XAxis,
             YAxis,
-            ZAxis,          
+            ZAxis,
+            LookAxis,
         }
     }
 }

@@ -39,10 +39,10 @@ namespace LevelEditorCore
             float nearZ = m_camera.PerspectiveNearZ;
             m_camera.ZoomOnSphere(sphere);
             m_camera.PerspectiveNearZ = nearZ;
-            m_camera.CameraChanged += new EventHandler(CameraChanged);
-
+            m_camera.CameraChanged += new EventHandler(CameraChanged);            
         }
-
+        
+        
         /// <summary>
         /// Get the camera object.
         /// there is only one camera object.
@@ -62,6 +62,8 @@ namespace LevelEditorCore
             {
                 if (value == null)
                     throw new ArgumentException();
+                if (!value.CanHandleCamera(m_camera))
+                    return;
 
                 if (m_cameraController != null)
                     m_cameraController.Camera = null;
@@ -112,6 +114,12 @@ namespace LevelEditorCore
             return ray;
         }
 
+
+        /// <summary>
+        /// Render the scene</summary>
+        public virtual void Render()
+        {
+        }
 
         /// <summary>
         /// project the v from 3d space to viewport space
@@ -226,11 +234,9 @@ namespace LevelEditorCore
         {
             Invalidate();
         }
-
-        private Matrix4F m_axisSystem = new Matrix4F();
+        
         private readonly Camera m_camera;  // only camera object.
-        private CameraController m_cameraController;
-
+        private CameraController m_cameraController;        
     }
 
 }

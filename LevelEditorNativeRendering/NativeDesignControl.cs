@@ -45,6 +45,7 @@ namespace RenderingInterop
             m_renderState.WireFrameColor = Color.DarkBlue;
             m_renderState.SelectionColor = Color.FromArgb(66, 255, 161);
             BackColor = SystemColors.ControlDark;
+            m_renderState.Changed += (sender, e) => Invalidate();
         }
 
         public ulong SurfaceId
@@ -58,15 +59,6 @@ namespace RenderingInterop
             get { return m_renderState; }
         }
 
-        protected override void OnBackColorChanged(EventArgs e)
-        {
-            base.OnBackColorChanged(e);
-            if (swapChainId != 0)
-            {
-                GameEngine.SetObjectProperty(swapChainId, SurfaceId, BkgColorPropId, BackColor);
-            }            
-        }
-        
         protected override void OnSizeChanged(EventArgs e)
         {
             base.OnSizeChanged(e);
@@ -75,7 +67,7 @@ namespace RenderingInterop
             {
                 GameEngine.SetObjectProperty(swapChainId, SurfaceId, SizePropId, sz);
                 Camera.Aspect = (float)sz.Width / (float)sz.Height;
-            }
+            }            
         }
         protected override void Dispose(bool disposing)
         {
@@ -157,11 +149,8 @@ namespace RenderingInterop
                         );
                 }
             }
-
-
             return paths;
         }
-
         
         private IGame TargetGame()
         {            
@@ -271,8 +260,9 @@ namespace RenderingInterop
                 HitRecord? hr = (snap && ( snapFilter == null || snapFilter.CanSnapTo(ghost,hitnode))) ? hit : null;
                 ProjectGhost(ghost, rayw, hr);
             }
-            DesignView.Tick();
-            
+
+            GameLoop.Update();
+            GameLoop.Render();            
         }
         protected override void OnDragDrop(DragEventArgs drgevent)
         {
@@ -325,32 +315,27 @@ namespace RenderingInterop
         }
         protected override void OnPaint(PaintEventArgs e)
         {
-            if (DesignView.Context == null || GameEngine.IsInError)
+            try
             {
-                e.Graphics.Clear(BackColor);
-                if(GameEngine.IsInError)
-                    e.Graphics.DrawString(GameEngine.CriticalError, Font, Brushes.Red, 1, 1);
-                return;
-            }
-
-            FrameTime ft = DesignView.GetFrameTime();
-            GameEngine.SetGameLevel(DesignView.Context.Cast<NativeObjectAdapter>());
-            GameEngine.Update(ft.TotalTime, ft.ElapsedTime, false);
-            Render();
-            // draw selection
-            if (IsPicking)
-            {
-                Rectangle rect = MakeRect(FirstMousePoint, CurrentMousePoint);
-                if (rect.Width > 0 && rect.Height > 0)
+                if (DesignView.Context == null || GameEngine.IsInError
+                    || GameLoop == null)
                 {
-                    e.Graphics.DrawRectangle(s_marqueePen, rect);
+                    e.Graphics.Clear(DesignView.BackColor);
+                    if (GameEngine.IsInError)
+                        e.Graphics.DrawString(GameEngine.CriticalError, Font, Brushes.Red, 1, 1);
+                    return;
                 }
+                GameLoop.Update();
+                Render();                
             }
+            catch(Exception ex)
+            {
+                e.Graphics.DrawString(ex.Message, Font, Brushes.Red, 1, 1);
+            }            
         }
-
       
         // render the scene.
-        public void Render()
+        public override void Render()
         {
             bool skipRender =
                 SurfaceId == 0
@@ -363,21 +348,22 @@ namespace RenderingInterop
                 return;
 
             m_clk.Start();
+            GameEngine.SetObjectProperty(swapChainId, SurfaceId, BkgColorPropId, DesignView.BackColor);
             GameEngine.SetRenderState(RenderState);
             GameEngine.Begin(SurfaceId, Camera.ViewMatrix, Camera.ProjectionMatrix);
 
             IGame game = DesignView.Context.As<IGame>();
             GridRenderer gridRender = game.Grid.Cast<GridRenderer>();
             gridRender.Render(Camera);
+          
+            GameEngine.RenderGame();
 
             bool renderSelected = RenderState.DisplayBound == DisplayFlagModes.Selection
                 || RenderState.DisplayCaption == DisplayFlagModes.Selection
                 || RenderState.DisplayPivot == DisplayFlagModes.Selection;
 
-
             if (renderSelected)
             {
-                // for testing draw bounds for selected objects
                 var selection = DesignView.Context.As<ISelectionContext>().Selection;
                 IEnumerable<DomNode> rootDomNodes = DomNode.GetRoots(selection.AsIEnumerable<DomNode>());
                 RenderProperties(rootDomNodes,
@@ -391,100 +377,59 @@ namespace RenderingInterop
                    RenderState.DisplayBound == DisplayFlagModes.Always,
                    RenderState.DisplayPivot == DisplayFlagModes.Always);
 
-            GameEngine.RenderGame();
-            
-           
+            GameEngine.SetRendererFlag(BasicRendererFlags.Foreground | BasicRendererFlags.Lit);            
             if (DesignView.Manipulator != null)
                 DesignView.Manipulator.Render(this);
+                                  
+            string str = string.Format("View Type: {0}   time per frame-render call: {1:0.00} ms", ViewType, m_clk.Milliseconds);
+            GameEngine.DrawText2D(str, Util3D.CaptionFont, 1,1, Color.White);          
+            GameEngine.End();
 
-            string str = string.Format("View Type: {0}   time-per-frame: {1:0.00} ms", ViewType, m_clk.Milliseconds);
-            GameEngine.DrawText2D(str, Util3D.CaptionFont, 1,1, Color.White);
-
-            RenderSystemAxis();
-            GameEngine.End();                                    
+            if (IsPicking)
+            {// todo: use Directx to draw marque.                
+                using (Graphics g = CreateGraphics())
+                {
+                    Rectangle rect = MakeRect(FirstMousePoint, CurrentMousePoint);
+                    if (rect.Width > 0 && rect.Height > 0)
+                    {
+                        g.DrawRectangle(s_marqueePen, rect);
+                    }
+                }
+            }
+            
         }
         
-        private void RenderSystemAxis()
-        {
-            float nz = Camera.Frustum.NearZ;
-
-            float x = 0.05f * Width;
-            Vec3F pos = new Vec3F(x, Height-x , 0.0f);
-            Matrix4F vp = Camera.ViewMatrix * Camera.ProjectionMatrix;
-            pos = this.Unproject(pos, vp);
-            if (Camera.Frustum.IsOrtho)
-                pos = pos + Camera.LookAt;
-            else
-                pos = pos + Camera.LookAt * (Camera.NearZ * 0.1f);
-                                    
-            float s;
-            Util.CalcAxisLengths(Camera, pos, out s);
-            Matrix4F scale = new Matrix4F();
-            scale.Scale(s * 0.3f);
-            Matrix4F trans =  new Matrix4F(pos);
-            Matrix4F xform = scale * trans;
-            Util3D.RenderFlag = BasicRendererFlags.WireFrame | BasicRendererFlags.DisableDepthTest;            
-            Util3D.DrawX(xform, Color.Red);
-            Util3D.DrawY(xform, Color.Green);
-            Util3D.DrawZ(xform, Color.Blue);
-
-            Matrix4F wvp = xform * vp;
-
-            if (ViewType != ViewTypes.Left && ViewType != ViewTypes.Right)
-            {
-                Vec3F xaxis = new Vec3F(1, 0, 0);
-                Point scPt = Project(wvp, xaxis);
-                GameEngine.DrawText2D("X", Util3D.CaptionFont, scPt.X, scPt.Y, Color.Red);
-            }
-
-            if (ViewType != ViewTypes.Top && ViewType != ViewTypes.Bottom)
-            {
-                Vec3F yaxis = new Vec3F(0, 1.6f, 0);
-                Point scPt = Project(wvp, yaxis);
-                GameEngine.DrawText2D("Y", Util3D.CaptionFont, scPt.X, scPt.Y, Color.Green);
-            }
-
-            if (ViewType != ViewTypes.Front && ViewType != ViewTypes.Back)
-            {
-                Vec3F zaxis = new Vec3F(0, 0, 1);
-                Point scPt = Project(wvp, zaxis);
-                GameEngine.DrawText2D("Z", Util3D.CaptionFont, scPt.X, scPt.Y, Color.Blue);
-            }
-        }
-
         private void RenderProperties(IEnumerable<object> objects, bool renderCaption, bool renderBound, bool renderPivot)
-        {
-            bool renderAny = renderCaption || renderBound || renderPivot;
-            if (renderAny == false) return;
-
-            Util3D.RenderFlag = BasicRendererFlags.WireFrame;
-            Matrix4F vp = Camera.ViewMatrix * Camera.ProjectionMatrix;
-
-            foreach (object obj in objects)
+        {                      
+            if (renderCaption || renderBound)
             {
-                IBoundable bnode = obj.As<IBoundable>();
-                if (bnode == null || bnode.BoundingBox.IsEmpty || obj.Is<IGameObjectFolder>()) continue;
-
-                INameable nnode = obj.As<INameable>();
-                ITransformable trans = obj.As<ITransformable>();
-
-                if (renderBound)
+                Util3D.RenderFlag = BasicRendererFlags.WireFrame;
+                Matrix4F vp = Camera.ViewMatrix * Camera.ProjectionMatrix;
+                foreach (object obj in objects)
                 {
-                    Util3D.DrawAABB(bnode.BoundingBox);
-                }
-                if (renderCaption && nnode != null)
-                {
-                    Vec3F topCenter = bnode.BoundingBox.Center;
-                    topCenter.Y = bnode.BoundingBox.Max.Y;
-                    Point pt = Project(vp, topCenter);
-                    GameEngine.DrawText2D(nnode.Name, Util3D.CaptionFont, pt.X, pt.Y, Color.White);
+                    IBoundable bnode = obj.As<IBoundable>();
+                    if (bnode == null || bnode.BoundingBox.IsEmpty || obj.Is<IGameObjectFolder>()) continue;
+
+                    INameable nnode = obj.As<INameable>();
+                    ITransformable trans = obj.As<ITransformable>();
+
+                    if (renderBound)
+                    {
+                        Util3D.DrawAABB(bnode.BoundingBox);
+                    }
+                    if (renderCaption && nnode != null)
+                    {
+                        Vec3F topCenter = bnode.BoundingBox.Center;
+                        topCenter.Y = bnode.BoundingBox.Max.Y;
+                        Point pt = Project(vp, topCenter);
+                        GameEngine.DrawText2D(nnode.Name, Util3D.CaptionFont, pt.X, pt.Y, Color.White);
+                    }
                 }
             }
 
             if (renderPivot)
             {
-                Util3D.RenderFlag = BasicRendererFlags.WireFrame
-                             | BasicRendererFlags.DisableDepthTest;
+                Util3D.RenderFlag = BasicRendererFlags.WireFrame | BasicRendererFlags.DisableDepthTest;
 
                 // create few temp matrics to
                 Matrix4F toWorld = new Matrix4F();
@@ -507,21 +452,16 @@ namespace RenderingInterop
                     toWorld.Mul(PV, toWorld);
                     Vec3F pos = toWorld.Translation;
 
-                    float s;
-                    Util.CalcAxisLengths(Camera, pos, out s);
-                    s /= 12.0f;
+                    const float pivotDiameter = 16; // in pixels
+                    float s = Util.CalcAxisScale(Camera, pos, pivotDiameter, Height);                    
                     sc.Scale(s);
                     Util.CreateBillboard(bl, pos, Camera.WorldEye, Camera.Up, Camera.LookAt);
-
-                    Matrix4F.Multiply(sc, bl, recXform);
-
+                    recXform = sc * bl;
                     Util3D.DrawPivot(recXform, Color.Yellow);
-
                 }
             }
         }
        
-
         private IEnumerable<DomNode> Items
         {
             get
@@ -614,7 +554,5 @@ namespace RenderingInterop
         private readonly uint swapChainId;
         private readonly uint SizePropId;
         private readonly uint BkgColorPropId;
-
     }
-
 }

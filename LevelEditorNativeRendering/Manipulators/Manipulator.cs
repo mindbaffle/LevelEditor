@@ -11,8 +11,6 @@ using Sce.Atf.Adaptation;
 using Sce.Atf.Dom;
 using Sce.Atf.Applications;
 using LevelEditorCore;
-using LevelEditorCore.VectorMath;
-using Camera = Sce.Atf.Rendering.Camera;
 
 namespace RenderingInterop
 {
@@ -33,8 +31,7 @@ namespace RenderingInterop
         {
             Matrix4F normWorld = GetManipulatorMatrix();
             if (normWorld == null) return false;
-            HitRayV = vc.GetRay(scrPt, vc.Camera.ProjectionMatrix);
-            HitPoint = scrPt;
+            HitRayV = vc.GetRay(scrPt, vc.Camera.ProjectionMatrix);            
             HitMatrix.Set(normWorld);            
             return true;
         }
@@ -99,10 +96,17 @@ namespace RenderingInterop
         {
             get;
             private set;
-        }
-        protected Point HitPoint; // hit point in screen space.
+        }        
         protected Ray3F HitRayV;  // hit ray in view space.
 
-       
+
+        // common properties
+        public static readonly Color XAxisColor = Color.FromArgb(240, 40, 20);
+        public static readonly Color YAxisColor = Color.FromArgb(75, 240, 0);
+        public static readonly Color ZAxisColor = Color.FromArgb(15, 57, 240);
+        public const float AxisLength = 80; // in pixels
+        public const float AxisThickness = 1.0f / 26.0f;
+        public const float AxisHandle = 1.0f / 6.0f;
+
     }
 }

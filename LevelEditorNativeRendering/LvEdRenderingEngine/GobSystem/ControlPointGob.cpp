@@ -3,7 +3,7 @@
 #include "ControlPointGob.h"
 #include "CurveGob.h"
 
-#include "../Renderer/RenderUtil.h"
+
 #include "../Renderer/ShapeLib.h"
 #include "../Renderer/RenderBuffer.h"
 #include "../Renderer/Model.h"
@@ -11,26 +11,20 @@
 namespace LvEdEngine
 {
 
-
-void ControlPointGob::Update(float dt)
-{
-    UpdateWorldTransform();
-    UpdateWorldAABB();
-}
-
 // push Renderable nodes
 //virtual
-bool ControlPointGob::GetRenderables(RenderableNodeCollector* collector, RenderContext* context)
-{
-  
+void ControlPointGob::GetRenderables(RenderableNodeCollector* collector, RenderContext* context)
+{  
+	super::GetRenderables(collector, context);
+
     Mesh* mesh = ShapeLibGetMesh(RenderShape::QuadLineStrip);
     m_localBounds = mesh->bounds;
 
-    float w,h;
-    context->Cam().ComputeWorldDimensions(float3(&m_world.M41), &h, &w);
-    h *= 0.02f;
-        
-    Matrix scaleM = Matrix::CreateScale(h);
+    const float pointSize = 8; // control point size in pixels
+    float upp = context->Cam().ComputeUnitPerPixel(float3(&m_world.M41),
+        context->ViewPort().y);
+    float scale = pointSize * upp;        
+    Matrix scaleM = Matrix::CreateScale(scale);
     float3 objectPos = float3(m_world.M41,m_world.M42,m_world.M43);
     Matrix b = Matrix::CreateBillboard(objectPos,context->Cam().CamPos(),context->Cam().CamUp(),context->Cam().CamLook());
     Matrix billboard = scaleM * b;
@@ -66,10 +60,8 @@ bool ControlPointGob::GetRenderables(RenderableNodeCollector* collector, RenderC
     r.WorldXform = billboard;
     r.SetFlag(RenderableNode::kTestAgainstBBoxOnly, true);
     r.SetFlag(RenderableNode::kShadowCaster, false);
-    r.SetFlag(RenderableNode::kShadowReceiver, false);
-    
-    collector->Add(r, RenderFlags::None, Shaders::BasicShader);
-    return true;
+    r.SetFlag(RenderableNode::kShadowReceiver, false);    
+    collector->Add(r, RenderFlags::None, Shaders::BasicShader);    
 }
 
 

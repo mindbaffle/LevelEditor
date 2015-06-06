@@ -2,7 +2,7 @@
 
 using System;
 using System.Collections.Generic;
-
+using System.Drawing;
 using System.Windows.Forms;
 
 namespace LevelEditorCore
@@ -26,9 +26,18 @@ namespace LevelEditorCore
             get;
         }
 
+
         /// <summary>
-        /// Gets the IDesigViewControls</summary>
-        /// <returns></returns>
+        /// Gets all the DesignViewControls</summary>
+        IEnumerable<DesignViewControl> AllViews
+        {
+            get;
+        }
+
+
+        /// <summary>
+        /// Gets only DesigViewControls
+        /// for the current ViewMode</summary>
         IEnumerable<DesignViewControl> Views
         {
             get;
@@ -78,20 +87,14 @@ namespace LevelEditorCore
         /// Invalates all the visible views.</summary>        
         /// <remarks>if realtime is true then this method do nothing.</remarks>
         void InvalidateViews();
-        
-        /// <summary>
-        /// Advance update and render by step</summary>
-        void Tick();
 
         /// <summary>
-        /// Tick using the specified frame time.
-        /// </summary>        
-        void Tick(FrameTime ft);
-
-        /// <summary>
-        /// Gets next frame time.</summary>        
-        FrameTime GetFrameTime();
-
+        /// Gets or sets the background color of the design controls</summary>
+        Color BackColor
+        {
+            get;
+            set;
+        }
     }
 
     

@@ -3,11 +3,11 @@
 #pragma once
 
 #pragma once
-#include <D3DX11.h>
 #include "../Core/WinHeaders.h"
 #include "Shader.h"
 #include "RenderEnums.h"
 #include "Renderable.h"
+#include "RenderBuffer.h"
 
 
 
@@ -26,13 +26,6 @@ namespace LvEdEngine
 
 
     private:
-        ID3D11Buffer*          m_cbPerFrame;
-        ID3D11Buffer*          m_cbPerObject;
-        ID3D11VertexShader*    m_vsShader;
-        ID3D11PixelShader*     m_psShader;
-        ID3D11InputLayout*     m_vertexLayout;
-        RenderContext*         m_rc; // render context
-
         struct BasicCbPerFrame
         {
             Matrix viewXform;
@@ -44,5 +37,11 @@ namespace LvEdEngine
             Matrix worldXform; 
             float4 color;
         };
+        TConstantBuffer<BasicCbPerFrame> m_cbPerFrame;
+        TConstantBuffer<BasicCbPerObject> m_cbPerObject;        
+        ID3D11VertexShader*    m_vsShader;
+        ID3D11PixelShader*     m_psShader;
+        ID3D11InputLayout*     m_vertexLayout;
+        RenderContext*         m_rc; // render context        
     };
 }

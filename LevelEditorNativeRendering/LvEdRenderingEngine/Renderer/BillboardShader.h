@@ -1,11 +1,11 @@
 //Copyright © 2014 Sony Computer Entertainment America LLC. See License.txt.
 
 #pragma once
-#include <D3DX11.h>
 #include "../Core/WinHeaders.h"
 #include "RenderEnums.h"
 #include "Renderable.h"
 #include "Shader.h"
+#include "RenderBuffer.h"
 
 namespace LvEdEngine
 {
@@ -32,21 +32,8 @@ public:
 
     virtual void DrawNodes(const RenderNodeList& renderNodes);
     
-private:
-    void Initialize(ID3D11Device* device); 
+private:    
     void Draw(const RenderableNode& r);  
-
-    ID3D11VertexShader*     m_vertexShader;
-    ID3D11PixelShader*      m_pixelShader;
-    ID3D11InputLayout*      m_vertexLayout;
-    ID3D11Buffer*           m_constantBufferPerFrame;
-    ID3D11Buffer*           m_constantBufferPerDraw;
-    
-    ID3D11RasterizerState*  m_rasterStateSolid;
-    ID3D11SamplerState*     m_samplerState;
-
-    RenderFlagsEnum         m_renderFlags;
-    RenderContext*          m_rc;
 
     // -------------------------------------------------------------------
     struct ConstantBufferPerFrame
@@ -64,7 +51,15 @@ private:
         float3 pad;
     };
 
+    ID3D11VertexShader*     m_vertexShader;
+    ID3D11PixelShader*      m_pixelShader;
+    ID3D11InputLayout*      m_vertexLayout;
 
+    TConstantBuffer<ConstantBufferPerFrame> m_cbPerFrame;
+    TConstantBuffer<ConstantBufferPerDraw> m_cbPerDraw;    
+    
+    RenderFlagsEnum         m_renderFlags;
+    RenderContext*          m_rc;
  };
 
 }; // namespace LvEdEngine

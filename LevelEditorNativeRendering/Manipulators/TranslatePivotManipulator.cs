@@ -6,20 +6,16 @@ using System.ComponentModel.Composition;
 
 using Sce.Atf;
 using Sce.Atf.Adaptation;
-using Sce.Atf.Applications;
 using Sce.Atf.Dom;
 using Sce.Atf.VectorMath;
 
 using LevelEditorCore;
 
 using Camera = Sce.Atf.Rendering.Camera;
-using ViewTypes = Sce.Atf.Rendering.ViewTypes;
-using AxisSystemType = Sce.Atf.Rendering.Dom.AxisSystemType;
-
 
 namespace RenderingInterop
 {
-    using HitRegion = RenderingInterop.TranslatorControl.HitRegion;
+    using HitRegion = TranslatorControl.HitRegion;
 
     [Export(typeof(IManipulator))]
     [PartCreationPolicy(CreationPolicy.Shared)]
@@ -44,15 +40,13 @@ namespace RenderingInterop
 
             m_node = GetManipulatorNode(TransformationTypes.Pivot);
 
-            Camera camera = vc.Camera;
-            float s;
-            Util.CalcAxisLengths(camera, HitMatrix.Translation, out s);
+            Camera camera = vc.Camera;            
             Matrix4F view = camera.ViewMatrix;
             Matrix4F vp = view * camera.ProjectionMatrix;
             Matrix4F wvp = HitMatrix * vp;
 
             Ray3F rayL = vc.GetRay(scrPt, wvp);
-            m_hitRegion = m_translatorControl.Pick(HitMatrix, view, rayL, HitRayV, s);
+            m_hitRegion = m_translatorControl.Pick(vc, HitMatrix, view, rayL, HitRayV);
             bool picked = m_hitRegion != HitRegion.None;
             return picked;
         }
@@ -60,25 +54,8 @@ namespace RenderingInterop
         public override void Render(ViewControl vc)
         {
             Matrix4F normWorld = GetManipulatorMatrix();
-            if (normWorld == null) return;
-
-            Camera camera = vc.Camera;
-            float s;
-            Util.CalcAxisLengths(camera, normWorld.Translation, out s);
-            m_translatorControl.Render(normWorld, s);        
-            
-            Matrix4F sc = new Matrix4F();
-            Vec3F pos = normWorld.Translation;            
-            s /= 12.0f;
-            sc.Scale(s);
-
-            Matrix4F bl = new Matrix4F();
-            Util.CreateBillboard(bl, pos, camera.WorldEye, camera.Up, camera.LookAt);
-
-            Matrix4F recXform = new Matrix4F();
-            Matrix4F.Multiply(sc, bl, recXform);
-
-            Util3D.DrawPivot(recXform, Color.Yellow);
+            if (normWorld == null) return;            
+            m_translatorControl.Render(vc, normWorld);                                
         }
 
         public override void OnBeginDrag()
@@ -163,9 +140,9 @@ namespace RenderingInterop
             localToWorld.OrthoNormalize(localToWorld);
             return new Matrix4F(localToWorld.Translation);
         }
-              
+        
         private TranslatorControl m_translatorControl;
-        private HitRegion m_hitRegion = HitRegion.None;        
+        private HitRegion m_hitRegion = HitRegion.None;
         private Matrix4F m_worldToLocal;
         private Vec3F m_originalPivot;
         private ITransformable m_node;

@@ -24,29 +24,29 @@ LightGob::~LightGob()
 
 // push Renderable nodes
 //virtual 
-bool LightGob::GetRenderables(RenderableNodeCollector* collector, RenderContext* context)
+void LightGob::GetRenderables(RenderableNodeCollector* collector, RenderContext* context)
 {
-    if (!IsVisible(context->Cam().GetFrustum()))
-    {
-        return false;
-    }
+	if (!IsVisible(context->Cam().GetFrustum()))
+		return;
+    
+	super::GetRenderables(collector, context);
 
     RenderableNode renderable;
     GameObject::SetupRenderable(&renderable,context);
     renderable.mesh = m_mesh;
-    renderable.textures[TextureType::DIFFUSE] =  TextureLib::Inst()->GetByName(L"LIGHT.PNG");
-    Matrix billboard = m_world;
-    {               
-        float3 objectPos = &m_world.M41;
-        Camera& cam = context->Cam();
-        billboard = Matrix::CreateBillboard(objectPos,cam.CamPos(),cam.CamUp(),cam.CamLook());                 
-    }
-    renderable.WorldXform = billboard;
+    renderable.textures[TextureType::DIFFUSE] =  TextureLib::Inst()->GetByName(L"Light.png");
+    
+    float3 objectPos = &m_world.M41;
+    Camera& cam = context->Cam();    
+    Matrix billboard = Matrix::CreateBillboard(objectPos,cam.CamPos(),cam.CamUp(),cam.CamLook());       
+    float sx = length( float3(&m_local.M11) );
+    float sy = length( float3(&m_local.M21) );
+    float sz = length( float3(&m_local.M31) );    
+    Matrix scale = Matrix::CreateScale(sx,sy,sz);
+    renderable.WorldXform = scale * billboard;
     
     RenderFlagsEnum flags = RenderFlags::Textured;
     collector->Add( renderable, flags, Shaders::BillboardShader );
-    
-    return true;
 }
 
 }

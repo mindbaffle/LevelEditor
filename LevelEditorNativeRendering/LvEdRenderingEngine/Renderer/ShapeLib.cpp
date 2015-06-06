@@ -4,6 +4,8 @@
 #include "RenderBuffer.h"
 #include "Model.h"
 #include "RenderUtil.h"
+#include "GpuResourceFactory.h"
+
 
 namespace LvEdEngine
 {
@@ -20,7 +22,7 @@ static Mesh* s_meshes[RenderShape::MAX];
     static Mesh* CreateUnitQuad(ID3D11Device* device);
     static Mesh* CreateUnitQuadLine(ID3D11Device* device);
     static Mesh* CreateStarUnitQuads(ID3D11Device* device);
-
+    static Mesh* CreateUnitTorus(ID3D11Device* device);
     static void CreateSphere(float radius,
         uint32_t slices,
         uint32_t stacks,
@@ -29,13 +31,7 @@ static Mesh* s_meshes[RenderShape::MAX];
         std::vector<float2>* tex,
         std::vector<uint32_t>* indices);
 
- /*   static void CreateDome(float radius, 
-        uint32_t dim, 
-        std::vector<float3>* pos,  
-        std::vector<float3>* nor,  
-        std::vector<float2>* tex,
-        std::vector<uint32_t>* indices
-        );*/
+ 
 
     static void CreateCone(float rad,
         float height,
@@ -56,6 +52,16 @@ static Mesh* s_meshes[RenderShape::MAX];
         std::vector<float3>* nor,
         std::vector<float2>* tex,
         std::vector<uint32_t>* indices);
+
+    static void CreateTorus(float innerRadius, 
+        float outerRadius,
+        uint32_t rings,
+        uint32_t sides,
+        std::vector<float3>* pos,
+        std::vector<float3>* nor,
+        std::vector<float2>* tex,
+        std::vector<uint32_t>* indices);
+
 
     static void CreateCube(float width, 
         float height, 
@@ -83,6 +89,7 @@ void ShapeLibStartup(ID3D11Device* device)
     s_meshes[RenderShape::Quad]             = CreateUnitQuad(device);
     s_meshes[RenderShape::Sphere]           = CreateUnitSphere(device);
     s_meshes[RenderShape::Cylinder]         = CreateUnitCylinder(device);
+    s_meshes[RenderShape::Torus]            = CreateUnitTorus(device);
     s_meshes[RenderShape::Cube]             = CreateUnitCube(device);
     s_meshes[RenderShape::Cone]             = CreateUnitCone(device);
     s_meshes[RenderShape::AsteriskQuads]    = CreateStarUnitQuads(device);
@@ -139,6 +146,19 @@ static Mesh* CreateUnitCylinder(ID3D11Device* device)
     return mesh;    
 }
 
+static Mesh* CreateUnitTorus(ID3D11Device* device)
+{
+    Mesh* mesh = new Mesh();        
+    mesh->name = "UnitTorus";
+
+    CreateTorus( 0.3f, 0.5f, 32, 8,&mesh->pos, &mesh->nor, &mesh->tex, &mesh->indices);
+    mesh->ComputeTangents();
+    mesh->Construct(device);
+    mesh->ComputeBound();
+
+    return mesh;    
+
+}
 
 // ----------------------------------------------------------------------------------------------
 static Mesh* CreateUnitCone(ID3D11Device* device)
@@ -233,9 +253,9 @@ static Mesh* CreateUnitQuadLine(ID3D11Device* device)
 {
     Mesh* mesh = new Mesh();
     mesh->primitiveType = PrimitiveType::LineStrip;
-
     CreateQuadLine(0.5f, 0.5f, &mesh->pos);
-    mesh->vertexBuffer = CreateVertexBuffer(device, VertexFormat::VF_P, (void*)&mesh->pos[0], (uint32_t)mesh->pos.size());    
+    //mesh->vertexBuffer = CreateVertexBuffer(device, VertexFormat::VF_P, (void*)&mesh->pos[0], (uint32_t)mesh->pos.size());    
+    mesh->Construct(device);
     
 #if defined(DEBUG) || defined(_DEBUG)
     mesh->vertexBuffer->SetDebugName("UnitQuadLine");    
@@ -419,13 +439,72 @@ static void CreateSphere(float radius, uint32_t slices, uint32_t stacks, std::ve
 //}	
 
 
-////---------------------------------------------------------------------------------------------
-//static void CreateCone(float rad, float start, float height, uint32_t slices, uint32_t stacks, std::vector<float3>* pos, std::vector<float3>* nor, std::vector<float2>* tex, std::vector<uint32_t>* indices)
-//{
-//    CreateCylinder(rad, 0, start, height, slices, stacks, pos, nor, tex, indices);
-//}
-//    
-//---------------------------------------------------------------------------------------------
+
+static void CreateTorus(float innerRadius, 
+    float outerRadius,
+    uint32_t rings,
+    uint32_t sides,
+    std::vector<float3>* pos,
+    std::vector<float3>* nor,
+    std::vector<float2>* tex,
+    std::vector<uint32_t>* indices)
+{
+   
+    uint32_t ringStride = rings + 1;
+    uint32_t sideStride = sides + 1;
+
+    // radiusC: distance to center of the ring
+    float radiusC = (innerRadius + outerRadius) * 0.5f;
+
+    //radiusR: the radius of the ring
+    float radiusR = (outerRadius - radiusC);
+    
+    for (uint32_t i = 0; i <= rings; i++)
+    {
+        float u = (float)i / rings;
+                       
+        float outerAngle = i * TwoPi / rings;
+
+        // xform from ring space to torus space.
+        Matrix transform = Matrix::CreateTranslation(radiusC, 0, 0) * Matrix::CreateRotationY(outerAngle);
+        
+        // create vertices for each ring.
+        for (uint32_t j = 0; j <= sides; j++)
+        {
+            float v = (float)j / sides;
+            
+            float innerAngle = j * TwoPi / sides + Pi;
+            float dx = cos(innerAngle);
+            float dy = sin(innerAngle);
+
+            // normal, position ,and texture coordinates
+            float3 n(dx, dy, 0);
+            float3 p = n * radiusR;
+            float2 t(u, v);
+
+            p.Transform(transform);
+            n.TransformNormal(transform);
+            
+            pos->push_back(p);
+            nor->push_back(n);
+            tex->push_back(t);
+
+            // And create indices for two triangles.
+            uint32_t nextI = (i + 1) % ringStride;
+            uint32_t nextJ = (j + 1) % sideStride;
+
+            indices->push_back(nextI * sideStride + j);            
+            indices->push_back(i * sideStride + nextJ);
+            indices->push_back(i * sideStride + j);
+            
+            indices->push_back(nextI * sideStride + j);            
+            indices->push_back(nextI * sideStride + nextJ);
+            indices->push_back(i * sideStride + nextJ);            
+        }
+    }
+}
+
+
 static void CreateCylinder(float radius1, float radius2, float start, float height, uint32_t slices, uint32_t stacks, 
     std::vector<float3>* pos, std::vector<float3>* nor, std::vector<float2>* tex, std::vector<uint32_t>* indices)
 {
@@ -675,66 +754,6 @@ static void CreateCube(float width, float height, float depth,
 //---------------------------------------------------------------------------------------------
 static void CreateQuad(float width, float height, std::vector<float3>* pos, std::vector<float3>* nor, std::vector<float2>* tex, std::vector<uint32_t>* indices)
 {   
-
-    //// generate texture coordinates such that the vertex tex is at the center of texel.
-    //float m_patchDim = 9;
-    //std::vector<VertexPNT> vertices;
-    //VertexPNT vertex;
-    //vertex.Normal = float3(0,1,0);
-    //float numverts = m_patchDim;    
-    //float halftexel =  (1.0f/m_patchDim) * 0.5f;    
-    //for(float z = 0; z < m_patchDim; z++)
-    //{
-    //   
-    //    for(float x = 0; x < m_patchDim; x++)
-    //    {
-    //        vertex.Position = float3(x,0,z);            
-    //        vertex.Tex = float2( x/m_patchDim+halftexel,z/m_patchDim+halftexel);
-    //        vertices.push_back(vertex);
-    //    }
-    //}
-
-
-    // //// copy data to arrays
-    //for(auto it = vertices.begin(); it != vertices.end(); it++)
-    //{
-
-    //    pos->push_back(it->Position);
-    //    if(nor) nor->push_back(it->Normal);
-    //    if(tex) tex->push_back(it->Tex);
-    //}
-
-    //
-    //// create index buffer.
-    //// A--------B    
-    //// | \      |
-    //// |   \    |
-    //// |     \  |
-    //// C--------D
-    //// each cell has two tri  ABC and CBD
-
-    //// create one set of indices used by all the meshes.
-    //// todo allow mesh class to share indices.
-    //int32_t patchDim = m_patchDim;
-    //int32_t patchCell = m_patchDim - 1;    
-    //int32_t numPatchIndices =   patchCell * patchCell * 6;
-    //indices->resize(numPatchIndices);    
-    //
-    //for (int32_t zc = 0; zc < patchCell; zc++)
-    //{
-    //    for (int32_t xc = 0; xc < patchCell; xc++)
-    //    {
-    //        // front faces are CCW like OpenGL            
-    //        indices->push_back( zc * patchDim + xc);            // A
-    //        indices->push_back( (zc + 1) * patchDim + xc);      // C
-    //        indices->push_back( (zc + 1) * patchDim + xc + 1);  // D
-
-    //        indices->push_back( zc * patchDim + xc);            // A
-    //        indices->push_back( (zc + 1) * patchDim + xc + 1);  // D            
-    //        indices->push_back( zc * patchDim + xc + 1);        // B
-    //    }
-    //}    
-
     VertexPNT v[4];
     float maxt = 1.0f;
     // Fill in the front face vertex data.

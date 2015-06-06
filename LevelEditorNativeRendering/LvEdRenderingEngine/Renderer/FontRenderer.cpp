@@ -4,9 +4,10 @@
     FontRenderer.cpp
 
 ****************************************************************************/
-#include <d3dx11.h>
-#include <DxErr.h>
-#include <xnamath.h>
+
+#include "FontRenderer.h"
+#include "Font.h"
+
 #include <assert.h>
 #include "../Core/Utils.h"
 #include "../Core/Logger.h"
@@ -14,9 +15,8 @@
 #include "RenderState.h"
 #include "RenderUtil.h"
 #include "../VectorMath/V3dMath.h"
-#include "FontRenderer.h"
-#include "Font.h"
 #include "RenderContext.h"
+#include "GpuResourceFactory.h"
 
 using namespace LvEdEngine;
 using namespace LvEdEngine::LvEdFonts;
@@ -131,13 +131,13 @@ void FontRenderer::Init( DeviceManager* pDeviceManager )
     ID3DBlob* pPSBlob = CompileShaderFromResource(L"FontShader.hlsl", "PS","ps_4_0", NULL);
     assert(pPSBlob);
 
-    m_vertexShader = CreateVertexShader(m_deviceManager->GetDevice(), pVSBlob);
+    m_vertexShader = GpuResourceFactory::CreateVertexShader(pVSBlob);
     assert(m_vertexShader);
 
-    m_pixelShader = CreatePixelShader(m_deviceManager->GetDevice(), pPSBlob);
+    m_pixelShader = GpuResourceFactory::CreatePixelShader(pPSBlob);
     assert(m_pixelShader);
 
-    m_vertexLayout = CreateInputLayout(m_deviceManager->GetDevice(), pVSBlob, VertexFormat::VF_PTC);
+    m_vertexLayout = GpuResourceFactory::CreateInputLayout(pVSBlob, VertexFormat::VF_PTC);
     assert(m_vertexLayout);
 
     m_vertexBuffer = CreateFontVertexBuffer( m_deviceManager->GetDevice(), (UINT)GetMaxBatch(), sizeof(FontTextVertex) );
